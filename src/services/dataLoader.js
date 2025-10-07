@@ -1,8 +1,12 @@
 const fs = require('fs/promises');
 const path = require('path');
 const dbConnector = require('./dbConnector');
-const { parseXLS } = require('./xlsParser');
+const { parseWorkbook } = require('./xlsParser');
 const { isEmpty } = require('../utils/helpers');
+
+const XLS_START_ROW = parseInt(process.env.XLS_START_ROW || '10', 10);
+const XLS_END_ROW = parseInt(process.env.XLS_END_ROW || '2247', 10);
+const XLS_HEADER_ROWS = parseInt(process.env.XLS_HEADER_ROWS || '2', 10);
 
 const BASE_COLUMN_MAPPING = {
     'N°': 'id',
@@ -43,6 +47,36 @@ const ASSET_COLUMN_MAPPING = {
     'CERTIFICATO CNS': { category: 'CERTIFICATO', subtype: 'CNS' },
     'CERTIFICATO CFD': { category: 'CERTIFICATO', subtype: 'CFD' },
     'CERTIFICATO CFD-R': { category: 'CERTIFICATO', subtype: 'CFD-R' }
+};
+
+const CONTACT_COLUMN_MAPPING = {
+    'N°': 'id',
+    Titolare: 'titolare',
+    Email: 'email',
+    'Recapito Telefonico': 'recapito_telefonico'
+};
+
+const RENEWAL_COLUMN_MAPPING = {
+    'N°': 'id',
+    Titolare: 'titolare',
+    Email: 'email',
+    'Recapito Telefonico': 'recapito_telefonico',
+    'CERTIFICATO CNS-L': 'certificato_cns_l',
+    'CERTIFICATO CNS': 'certificato_cns',
+    'CERTIFICATO CFD': 'certificato_cfd',
+    'CERTIFICATO CFD-R': 'certificato_cfd_r',
+    'Data Emissione': 'data_emissione',
+    'Data Scadenza': 'data_scadenza',
+    'Rinnovo Data': 'rinnovo_data',
+    'Rinnovo DA': 'rinnovo_da',
+    'Costo (i.e.)': 'costo_ie',
+    'Importo (i.e.)': 'importo_ie',
+    'Fatturazione N° Documento': 'fattura_numero',
+    'Fatturazione Tipo Invio': 'fattura_tipo_invio',
+    'Fatturazione Tipo Pag.': 'fattura_tipo_pagamento',
+    'Tipo Invio': 'fattura_tipo_invio',
+    'Tipo Pag.': 'fattura_tipo_pagamento',
+    Note: 'note'
 };
 
 const BOOLEAN_COLUMNS = new Set();
@@ -105,24 +139,46 @@ const COLUMN_LOOKUP = {
     ...buildLookup(DOCUMENT_COLUMN_MAPPING, 'document')
 };
 
+const CONTACT_LOOKUP = buildLookup(CONTACT_COLUMN_MAPPING, 'contact');
+const RENEWAL_LOOKUP = buildLookup(RENEWAL_COLUMN_MAPPING, 'renewal');
+
+const createDefinitions = (mapping) => {
+    const map = new Map();
+    Object.values(mapping).forEach(({ category, subtype }) => {
+        const key = `${category}::${subtype}`;
+        if (!map.has(key)) {
+            map.set(key, { key, category, subtype });
+        }
+    });
+    return Array.from(map.values());
+};
+
+const ASSET_DEFINITIONS = createDefinitions(ASSET_COLUMN_MAPPING);
+const DOCUMENT_DEFINITIONS = createDefinitions(DOCUMENT_COLUMN_MAPPING);
+
 const buildColumnNames = (headerRows) => {
-    const [topRow = [], bottomRow = []] = headerRows;
-    const maxLength = Math.max(topRow.length, bottomRow.length);
+    if (!Array.isArray(headerRows) || headerRows.length === 0) {
+        return [];
+    }
+
+    const maxLength = headerRows.reduce(
+        (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
+        0
+    );
     const columns = [];
 
     for (let i = 0; i < maxLength; i += 1) {
-        const top = standardiseKey(topRow[i] || '');
-        const bottom = standardiseKey(bottomRow[i] || '');
+        const parts = headerRows
+            .map((row) => (Array.isArray(row) ? standardiseKey(row[i] || '') : ''))
+            .filter((value) => value && value.length > 0);
 
-        if (bottom && top && top !== bottom) {
-            columns.push(`${top} ${bottom}`.trim());
-        } else if (bottom) {
-            columns.push(bottom);
-        } else if (top) {
-            columns.push(top);
-        } else {
+        if (parts.length === 0) {
             columns.push(`column_${i}`);
+            continue;
         }
+
+        const uniqueParts = parts.filter((value, index) => parts.indexOf(value) === index);
+        columns.push(uniqueParts.join(' ').trim());
     }
 
     return columns;
@@ -147,20 +203,42 @@ const rowToRecord = (row, columns) => {
     return record;
 };
 
-const mapColumnKey = (key) => {
-    const variants = [
-        standardiseKey(key),
-        standardiseKey(key).toLowerCase(),
-        normaliseForLookup(key)
-    ];
-
-    for (const variant of variants) {
-        if (COLUMN_LOOKUP[variant]) {
-            return COLUMN_LOOKUP[variant];
+const rowHasValues = (row = []) =>
+    Array.isArray(row) &&
+    row.some((value) => {
+        if (value === null || value === undefined) {
+            return false;
         }
+        if (typeof value === 'string' && value.trim() === '') {
+            return false;
+        }
+        return true;
+    });
+
+const prepareSheetRows = (rows) => {
+    if (!Array.isArray(rows) || rows.length === 0) {
+        return { columns: [], dataRows: [] };
     }
 
-    return null;
+    const startRow = Math.max(1, XLS_START_ROW);
+    const endRow = Math.max(startRow, XLS_END_ROW);
+
+    const headerCandidates = rows.slice(0, startRow - 1).filter(rowHasValues);
+    const headerRows = headerCandidates.slice(-XLS_HEADER_ROWS);
+
+    if (headerRows.length === 0) {
+        headerRows.push([]);
+    }
+
+    const columns = buildColumnNames(headerRows);
+
+    const dataRows = rows
+        .map((row, index) => ({ row, excelRowNumber: index + 1 }))
+        .filter(({ excelRowNumber }) => excelRowNumber >= startRow && excelRowNumber <= endRow)
+        .map(({ row }) => row)
+        .filter(rowHasValues);
+
+    return { columns, dataRows };
 };
 
 const parseBoolean = (value) => {
@@ -220,7 +298,7 @@ const parseDate = (value) => {
 
     if (typeof value === 'number') {
         const excelEpoch = new Date(Math.round((value - 25569) * 86400 * 1000));
-        return excelEpoch.toISOString().slice(0, 10);
+        return Number.isNaN(excelEpoch.getTime()) ? null : excelEpoch.toISOString().slice(0, 10);
     }
 
     if (typeof value === 'string') {
@@ -283,35 +361,83 @@ const normaliseId = (value) => {
     }
 
     const numericMatch = trimmed.match(/\d+/);
-    return numericMatch ? numericMatch[0] : trimmed;
+    if (numericMatch) {
+        const parsed = Number.parseInt(numericMatch[0], 10);
+        return Number.isNaN(parsed) ? null : parsed;
+    }
+
+    const fallback = Number.parseInt(trimmed, 10);
+    if (Number.isNaN(fallback)) {
+        return null;
+    }
+
+    return fallback;
 };
 
-const normaliseRecord = (rawRecord) => {
+const mapColumnKey = (key, lookup) => {
+    const variants = [
+        standardiseKey(key),
+        standardiseKey(key).toLowerCase(),
+        normaliseForLookup(key)
+    ];
+
+    for (const variant of variants) {
+        if (lookup[variant]) {
+            return lookup[variant];
+        }
+    }
+
+    return null;
+};
+
+const normaliseMasterRecord = (rawRecord) => {
     const baseRaw = {};
-    const assetRaw = [];
-    const documentRaw = [];
+    const assetMap = new Map(
+        ASSET_DEFINITIONS.map((def) => [
+            def.key,
+            {
+                category: def.category,
+                subtype: def.subtype,
+                value: 0,
+                present: true
+            }
+        ])
+    );
+    const documentMap = new Map(
+        DOCUMENT_DEFINITIONS.map((def) => [
+            def.key,
+            {
+                category: def.category,
+                subtype: def.subtype,
+                value: 0,
+                present: true
+            }
+        ])
+    );
 
     Object.entries(rawRecord).forEach(([rawKey, rawValue]) => {
-        const mapped = mapColumnKey(rawKey);
+        const mapped = mapColumnKey(rawKey, COLUMN_LOOKUP);
         if (!mapped) {
             return;
         }
 
         if (mapped.type === 'asset') {
-            assetRaw.push({
-                category: mapped.value.category,
-                subtype: mapped.value.subtype,
-                value: rawValue
-            });
+            const key = `${mapped.value.category}::${mapped.value.subtype}`;
+            const entry = assetMap.get(key);
+            if (entry) {
+                entry.value = parseBoolean(rawValue) ? 1 : 0;
+                entry.present = true;
+            }
             return;
         }
 
         if (mapped.type === 'document') {
-            documentRaw.push({
-                category: mapped.value.category,
-                subtype: mapped.value.subtype,
-                value: rawValue
-            });
+            const key = `${mapped.value.category}::${mapped.value.subtype}`;
+            const entry = documentMap.get(key);
+            if (entry) {
+                entry.value = parseBoolean(rawValue) ? 1 : 0;
+                entry.present = true;
+            }
             return;
         }
 
@@ -364,21 +490,21 @@ const normaliseRecord = (rawRecord) => {
         baseNormalised.titolare = '';
     }
 
-    const assetsNormalised = assetRaw
-        .map(({ category, subtype, value }) => ({
-            category,
-            subtype,
-            value: parseBoolean(value)
-        }))
-        .filter((asset) => asset.value);
+    const assetsNormalised = Array.from(assetMap.values())
+        .filter((asset) => asset.present)
+        .map((asset) => ({
+            category: asset.category,
+            subtype: asset.subtype,
+            value: asset.value ? 1 : 0
+        }));
 
-    const documentsNormalised = documentRaw
-        .map(({ category, subtype, value }) => ({
-            category,
-            subtype,
-            value: parseBoolean(value)
-        }))
-        .filter((document) => document.value);
+    const documentsNormalised = Array.from(documentMap.values())
+        .filter((document) => document.present)
+        .map((document) => ({
+            category: document.category,
+            subtype: document.subtype,
+            value: document.value ? 1 : 0
+        }));
 
     return {
         base: baseNormalised,
@@ -387,41 +513,93 @@ const normaliseRecord = (rawRecord) => {
     };
 };
 
-const buildRecordsFromRows = (rows) => {
-    if (!Array.isArray(rows) || rows.length === 0) {
-        return [];
-    }
+const normaliseContactRecord = (rawRecord) => {
+    const mapped = {};
 
-    let headerRowCount = Math.min(2, rows.length);
-
-    if (rows.length >= 2) {
-        const secondRow = rows[1] || [];
-        const firstCell = secondRow[0];
-        const firstCellString =
-            firstCell === null || firstCell === undefined ? '' : String(firstCell).trim();
-        const looksLikeDataRow = firstCellString !== '' && /^\d+/.test(firstCellString);
-
-        if (looksLikeDataRow) {
-            headerRowCount = 1;
+    Object.entries(rawRecord).forEach(([rawKey, rawValue]) => {
+        const target = mapColumnKey(rawKey, CONTACT_LOOKUP);
+        if (!target) {
+            return;
         }
+        mapped[target.value] = rawValue;
+    });
+
+    const id = normaliseId(mapped.id || rawRecord['N°']);
+    if (!id) {
+        return null;
     }
 
-    const headerRows = rows.slice(0, headerRowCount);
-    const dataRows = rows.slice(headerRowCount);
+    return {
+        id,
+        email: parseGenericValue(mapped.email),
+        recapito_telefonico: parseGenericValue(mapped.recapito_telefonico)
+    };
+};
 
-    if (headerRows.length === 1) {
-        headerRows.push([]);
+const normaliseRenewalRecord = (rawRecord, sheetName) => {
+    const mapped = {};
+
+    Object.entries(rawRecord).forEach(([rawKey, rawValue]) => {
+        const target = mapColumnKey(rawKey, RENEWAL_LOOKUP);
+        if (!target) {
+            return;
+        }
+        mapped[target.value] = rawValue;
+    });
+
+    const id = normaliseId(mapped.id || rawRecord['N°']);
+    if (!id) {
+        return null;
     }
 
-    if (!Array.isArray(dataRows) || dataRows.length === 0) {
-        return [];
-    }
+    const record = {
+        signature_id: id,
+        sheet_name: sheetName ? sheetName.trim() : '',
+        email: parseGenericValue(mapped.email),
+        recapito_telefonico: parseGenericValue(mapped.recapito_telefonico),
+        certificato_cns_l: parseBoolean(mapped.certificato_cns_l) ? 1 : 0,
+        certificato_cns: parseBoolean(mapped.certificato_cns) ? 1 : 0,
+        certificato_cfd: parseBoolean(mapped.certificato_cfd) ? 1 : 0,
+        certificato_cfd_r: parseBoolean(mapped.certificato_cfd_r) ? 1 : 0,
+        data_emissione: parseDate(mapped.data_emissione),
+        data_scadenza: parseDate(mapped.data_scadenza),
+        rinnovo_data: parseDate(mapped.rinnovo_data),
+        rinnovo_da: parseGenericValue(mapped.rinnovo_da),
+        costo_ie: parseMoney(mapped.costo_ie),
+        importo_ie: parseMoney(mapped.importo_ie),
+        fattura_numero: parseGenericValue(mapped.fattura_numero),
+        fattura_tipo_invio: parseGenericValue(mapped.fattura_tipo_invio),
+        fattura_tipo_pagamento: parseGenericValue(mapped.fattura_tipo_pagamento),
+        note: parseGenericValue(mapped.note)
+    };
 
-    const columns = buildColumnNames(headerRows);
+    return record;
+};
+
+const buildMasterRecords = (rows) => {
+    const { columns, dataRows } = prepareSheetRows(rows);
 
     return dataRows
         .map((row) => rowToRecord(row, columns))
-        .map((record) => normaliseRecord(record))
+        .map((record) => normaliseMasterRecord(record))
+        .filter((record) => record !== null);
+};
+
+const buildContactRecords = (rows) => {
+    const { columns, dataRows } = prepareSheetRows(rows);
+
+    return dataRows
+        .map((row) => rowToRecord(row, columns))
+        .map((record) => normaliseContactRecord(record))
+        .filter((record) => record !== null);
+};
+
+const buildRenewalRecords = (rows, sheetName) => {
+    const { columns, dataRows } = prepareSheetRows(rows);
+
+    return dataRows
+        .map((row) => rowToRecord(row, columns))
+        .map((record) => normaliseRenewalRecord(record, sheetName))
         .filter((record) => record !== null);
 };
 
@@ -434,28 +612,38 @@ const loadDataToDatabase = async (
 ) => {
     if (!Array.isArray(records) || records.length === 0) {
         console.log('Nessun dato da importare nel database.');
-        return;
+        return {
+            base: 0,
+            assets: 0,
+            documents: 0
+        };
     }
+
+    let baseInserted = 0;
+    let assetsInserted = 0;
+    let documentsInserted = 0;
 
     for (const record of records) {
         const { base, assets, documents } = record;
 
         await connection.query(`REPLACE INTO \`${baseTableName}\` SET ?`, base);
+        baseInserted += 1;
 
         await connection.query(`DELETE FROM \`${assetTableName}\` WHERE signature_id = ?`, [
             base.id
         ]);
 
         if (Array.isArray(assets) && assets.length > 0) {
-            const insertValues = assets.map(() => '(?, ?, ?, 1)').join(', ');
+            const insertValues = assets.map(() => '(?, ?, ?, ?)').join(', ');
             const params = [];
 
             assets.forEach((asset) => {
-                params.push(base.id, asset.category, asset.subtype);
+                params.push(base.id, asset.category, asset.subtype, asset.value ? 1 : 0);
             });
 
             const insertSql = `INSERT INTO \`${assetTableName}\` (signature_id, category, subtype, has_item) VALUES ${insertValues}`;
             await connection.query(insertSql, params);
+            assetsInserted += assets.length;
         }
 
         await connection.query(`DELETE FROM \`${documentTableName}\` WHERE signature_id = ?`, [
@@ -463,17 +651,137 @@ const loadDataToDatabase = async (
         ]);
 
         if (Array.isArray(documents) && documents.length > 0) {
-            const insertValues = documents.map(() => '(?, ?, ?, 1)').join(', ');
+            const insertValues = documents.map(() => '(?, ?, ?, ?)').join(', ');
             const params = [];
 
             documents.forEach((document) => {
-                params.push(base.id, document.category, document.subtype);
+                params.push(base.id, document.category, document.subtype, document.value ? 1 : 0);
             });
 
             const insertSql = `INSERT INTO \`${documentTableName}\` (signature_id, category, subtype, has_item) VALUES ${insertValues}`;
             await connection.query(insertSql, params);
+            documentsInserted += documents.length;
         }
     }
+
+    return {
+        base: baseInserted,
+        assets: assetsInserted,
+        documents: documentsInserted
+    };
+};
+
+const applyContactUpdates = async (connection, baseTableName, contacts) => {
+    if (!Array.isArray(contacts) || contacts.length === 0) {
+        return 0;
+    }
+
+    let updated = 0;
+
+    for (const contact of contacts) {
+        const fields = [];
+        const params = [];
+
+        if (contact.email) {
+            fields.push('email = ?');
+            params.push(contact.email);
+        }
+
+        if (contact.recapito_telefonico) {
+            fields.push('recapito_telefonico = ?');
+            params.push(contact.recapito_telefonico);
+        }
+
+        if (fields.length === 0) {
+            continue;
+        }
+
+        fields.push('updated_at = NOW()');
+        params.push(contact.id);
+
+        const [result] = await connection.query(
+            `UPDATE \`${baseTableName}\` SET ${fields.join(', ')} WHERE id = ?`,
+            params
+        );
+        updated += result.affectedRows;
+    }
+
+    return updated;
+};
+
+const replaceRenewals = async (connection, renewalTableName, renewals) => {
+    if (!renewalTableName) {
+        return 0;
+    }
+
+    await connection.query(`DELETE FROM \`${renewalTableName}\``);
+
+    if (!Array.isArray(renewals) || renewals.length === 0) {
+        return 0;
+    }
+
+    const columns = [
+        'signature_id',
+        'sheet_name',
+        'email',
+        'recapito_telefonico',
+        'certificato_cns_l',
+        'certificato_cns',
+        'certificato_cfd',
+        'certificato_cfd_r',
+        'data_emissione',
+        'data_scadenza',
+        'rinnovo_data',
+        'rinnovo_da',
+        'costo_ie',
+        'importo_ie',
+        'fattura_numero',
+        'fattura_tipo_invio',
+        'fattura_tipo_pagamento',
+        'note',
+        'created_at',
+        'updated_at'
+    ];
+
+    const chunkSize = 500;
+    let inserted = 0;
+
+    for (let i = 0; i < renewals.length; i += chunkSize) {
+        const chunk = renewals.slice(i, i + chunkSize);
+        const placeholders = chunk.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`).join(', ');
+        const params = [];
+
+        chunk.forEach((renewal) => {
+            params.push(
+                renewal.signature_id,
+                renewal.sheet_name,
+                renewal.email,
+                renewal.recapito_telefonico,
+                renewal.certificato_cns_l ? 1 : 0,
+                renewal.certificato_cns ? 1 : 0,
+                renewal.certificato_cfd ? 1 : 0,
+                renewal.certificato_cfd_r ? 1 : 0,
+                renewal.data_emissione,
+                renewal.data_scadenza,
+                renewal.rinnovo_data,
+                renewal.rinnovo_da,
+                renewal.costo_ie,
+                renewal.importo_ie,
+                renewal.fattura_numero,
+                renewal.fattura_tipo_invio,
+                renewal.fattura_tipo_pagamento,
+                renewal.note || null
+            );
+        });
+
+        const insertSql = `INSERT INTO \`${renewalTableName}\` (${columns.join(
+            ', '
+        )}) VALUES ${placeholders}`;
+        const [result] = await connection.query(insertSql, params);
+        inserted += result.affectedRows;
+    }
+
+    return inserted;
 };
 
 const loadDataFromXLS = async (filePath) => {
@@ -487,30 +795,75 @@ const loadDataFromXLS = async (filePath) => {
         process.env.DB_DOCUMENT_TABLE,
         `${baseTableName}_documents`
     );
-    const rows = parseXLS(absolutePath);
-    const records = buildRecordsFromRows(rows);
+    const renewalTableName = sanitizeTableName(
+        process.env.DB_RENEWAL_TABLE,
+        `${baseTableName}_renewals`
+    );
 
-    if (!Array.isArray(records) || records.length === 0) {
-        console.log('Il file XLS non contiene righe valide da importare.');
+    const sheets = parseWorkbook(absolutePath);
+    if (!Array.isArray(sheets) || sheets.length === 0) {
         await fs.unlink(absolutePath).catch(() => {});
-        return;
+        const error = new Error('Il file XLS non contiene fogli elaborabili.');
+        error.code = 'NO_SHEETS';
+        throw error;
     }
+
+    const masterSheet = sheets[0];
+    const masterRecords = buildMasterRecords(masterSheet.rows);
+
+    if (!Array.isArray(masterRecords) || masterRecords.length === 0) {
+        await fs.unlink(absolutePath).catch(() => {});
+        const error = new Error('Il file XLS non contiene righe valide da importare.');
+        error.code = 'NO_VALID_ROWS';
+        throw error;
+    }
+
+    const contactSheet = sheets[1];
+    const contactRecords =
+        contactSheet && Array.isArray(contactSheet.rows)
+            ? buildContactRecords(contactSheet.rows)
+            : [];
+
+    const renewalRecords = sheets
+        .slice(1)
+        .flatMap((sheet) => buildRenewalRecords(sheet.rows, sheet.name));
 
     const connection = await dbConnector.getConnection();
 
     try {
         await connection.beginTransaction();
-        await loadDataToDatabase(
+        const masterStats = await loadDataToDatabase(
             connection,
-            records,
+            masterRecords,
             baseTableName,
             assetTableName,
             documentTableName
         );
-        await connection.commit();
-        console.log(
-            `Importazione completata: ${records.length} righe elaborate per la tabella ${baseTableName}.`
+        const contactsUpdated = await applyContactUpdates(
+            connection,
+            baseTableName,
+            contactRecords
         );
+        const renewalsInserted = await replaceRenewals(
+            connection,
+            renewalTableName,
+            renewalRecords
+        );
+        await connection.commit();
+
+        const stats = {
+            base: masterStats.base,
+            assets: masterStats.assets,
+            documents: masterStats.documents,
+            contactsUpdated,
+            renewalsInserted
+        };
+
+        console.log(
+            `Importazione completata: base=${masterStats.base}, assets=${masterStats.assets}, documenti=${masterStats.documents}, contatti aggiornati=${contactsUpdated}, rinnovi inseriti=${renewalsInserted}.`
+        );
+
+        return stats;
     } catch (error) {
         await connection.rollback();
         console.error("Errore durante l'importazione dei dati:", error);

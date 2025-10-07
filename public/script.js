@@ -33,7 +33,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(result?.message || 'Errore sconosciuto durante il caricamento.');
             }
 
-            setMessage(result?.message || 'File caricato con successo.', 'success');
+            const stats = result?.stats;
+            let details = '';
+            if (stats) {
+                const parts = [];
+                if (typeof stats.base === 'number') parts.push(`base: ${stats.base}`);
+                if (typeof stats.assets === 'number') parts.push(`assets: ${stats.assets}`);
+                if (typeof stats.documents === 'number') parts.push(`documenti: ${stats.documents}`);
+                if (typeof stats.contactsUpdated === 'number') {
+                    parts.push(`contatti aggiornati: ${stats.contactsUpdated}`);
+                }
+                if (typeof stats.renewalsInserted === 'number') {
+                    parts.push(`rinnovi inseriti: ${stats.renewalsInserted}`);
+                }
+                if (parts.length > 0) {
+                    details = ` (${parts.join(', ')})`;
+                }
+            }
+
+            setMessage(
+                `${result?.message || 'File caricato con successo.'}${details}`,
+                'success'
+            );
             form.reset();
         } catch (error) {
             console.error('Errore durante il caricamento del file:', error);

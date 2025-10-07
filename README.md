@@ -60,6 +60,10 @@ Se non hai un'istanza MySQL locale, puoi avviarne una con Docker:
    DB_TABLE=digital_signatures
    DB_ASSET_TABLE=digital_signatures_assets
    DB_DOCUMENT_TABLE=digital_signatures_documents
+   DB_RENEWAL_TABLE=digital_signatures_renewals
+   XLS_START_ROW=10
+   XLS_END_ROW=2247
+   XLS_HEADER_ROWS=2
    DB_CHARSET=utf8mb4
    DB_COLLATION=utf8mb4_unicode_ci
    ```
@@ -127,13 +131,16 @@ Se non hai un'istanza MySQL locale, puoi avviarne una con Docker:
    DB_TABLE=digital_signatures
    DB_ASSET_TABLE=digital_signatures_assets
    DB_DOCUMENT_TABLE=digital_signatures_documents
+   DB_RENEWAL_TABLE=digital_signatures_renewals
+   XLS_START_ROW=10
+   XLS_END_ROW=2247
+   XLS_HEADER_ROWS=2
    ```
 
 6. Crea le tabelle richieste dal progetto:
    ```
    npm run db:setup
    ```
-
 7. Avvia l'app:
    ```
    npm start

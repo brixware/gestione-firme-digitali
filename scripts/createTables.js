@@ -34,6 +34,10 @@ const main = async () => {
         process.env.DB_DOCUMENT_TABLE,
         `${tableName}_documents`
     );
+    const renewalTableName = sanitizeIdentifier(
+        process.env.DB_RENEWAL_TABLE,
+        `${tableName}_renewals`
+    );
     const desiredCharset = sanitizeIdentifier(process.env.DB_CHARSET, 'utf8mb4');
     const desiredCollation = sanitizeIdentifier(
         process.env.DB_COLLATION,
@@ -101,8 +105,10 @@ const main = async () => {
 
         const createTableSql = `
             CREATE TABLE IF NOT EXISTS \`${tableName}\` (
-                id VARCHAR(10) NOT NULL,
+                id INT NOT NULL,
                 titolare VARCHAR(255) NOT NULL,
+                email VARCHAR(255) NULL,
+                recapito_telefonico VARCHAR(50) NULL,
                 data_emissione DATE NULL,
                 emesso_da VARCHAR(50) NULL,
                 costo_ie DECIMAL(10,2) NULL,
@@ -120,12 +126,31 @@ const main = async () => {
         await connection.query(createTableSql);
         console.log(`Tabella '${tableName}' verificata/creata con successo nel database '${database}'.`);
 
+        const ensureColumn = async (alterStatement, columnName) => {
+            try {
+                await connection.query(
+                    `ALTER TABLE \`${tableName}\` ${alterStatement};`
+                );
+                console.log(`Colonna '${columnName}' aggiunta/aggiornata nella tabella '${tableName}'.`);
+            } catch (error) {
+                if (error.code !== 'ER_DUP_FIELDNAME') {
+                    throw error;
+                }
+            }
+        };
+
+        await ensureColumn('ADD COLUMN email VARCHAR(255) NULL AFTER titolare', 'email');
+        await ensureColumn(
+            'ADD COLUMN recapito_telefonico VARCHAR(50) NULL AFTER email',
+            'recapito_telefonico'
+        );
+
         const createAssetsTableSql = `
             CREATE TABLE IF NOT EXISTS \`${assetTableName}\` (
-                signature_id VARCHAR(10) NOT NULL,
+                signature_id INT NOT NULL,
                 category VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50) NOT NULL,
-                has_item TINYINT(1) NOT NULL DEFAULT 1,
+                has_item TINYINT(1) NOT NULL DEFAULT 0,
                 created_at TIMESTAMP NULL,
                 updated_at TIMESTAMP NULL,
                 PRIMARY KEY (signature_id, category, subtype),
@@ -142,10 +167,10 @@ const main = async () => {
 
         const createDocumentsTableSql = `
             CREATE TABLE IF NOT EXISTS \`${documentTableName}\` (
-                signature_id VARCHAR(10) NOT NULL,
+                signature_id INT NOT NULL,
                 category VARCHAR(50) NOT NULL,
                 subtype VARCHAR(50) NOT NULL,
-                has_item TINYINT(1) NOT NULL DEFAULT 1,
+                has_item TINYINT(1) NOT NULL DEFAULT 0,
                 created_at TIMESTAMP NULL,
                 updated_at TIMESTAMP NULL,
                 PRIMARY KEY (signature_id, category, subtype),
@@ -158,6 +183,41 @@ const main = async () => {
         await connection.query(createDocumentsTableSql);
         console.log(
             `Tabella '${documentTableName}' verificata/creata con successo nel database '${database}'.`
+        );
+
+        const createRenewalsTableSql = `
+            CREATE TABLE IF NOT EXISTS \`${renewalTableName}\` (
+                id INT NOT NULL AUTO_INCREMENT,
+                signature_id INT NOT NULL,
+                sheet_name VARCHAR(100) NOT NULL,
+                email VARCHAR(255) NULL,
+                recapito_telefonico VARCHAR(50) NULL,
+                certificato_cns_l TINYINT(1) NOT NULL DEFAULT 0,
+                certificato_cns TINYINT(1) NOT NULL DEFAULT 0,
+                certificato_cfd TINYINT(1) NOT NULL DEFAULT 0,
+                certificato_cfd_r TINYINT(1) NOT NULL DEFAULT 0,
+                data_emissione DATE NULL,
+                data_scadenza DATE NULL,
+                rinnovo_data DATE NULL,
+                rinnovo_da VARCHAR(100) NULL,
+                costo_ie DECIMAL(10,2) NULL,
+                importo_ie DECIMAL(10,2) NULL,
+                fattura_numero VARCHAR(100) NULL,
+                fattura_tipo_invio VARCHAR(50) NULL,
+                fattura_tipo_pagamento VARCHAR(50) NULL,
+                note VARCHAR(255) NULL,
+                created_at TIMESTAMP NULL,
+                updated_at TIMESTAMP NULL,
+                PRIMARY KEY (id),
+                CONSTRAINT fk_${renewalTableName}_signature
+                    FOREIGN KEY (signature_id) REFERENCES \`${tableName}\`(id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=${activeCharset} COLLATE=${activeCollation};
+        `;
+
+        await connection.query(createRenewalsTableSql);
+        console.log(
+            `Tabella '${renewalTableName}' verificata/creata con successo nel database '${database}'.`
         );
     } finally {
         await connection.end();
