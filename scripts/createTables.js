@@ -144,6 +144,10 @@ const main = async () => {
             'ADD COLUMN recapito_telefonico VARCHAR(50) NULL AFTER email',
             'recapito_telefonico'
         );
+        await ensureColumn(
+            'ADD COLUMN fattura_data_pagamento DATE NULL AFTER fattura_tipo_pagamento',
+            'fattura_data_pagamento'
+        );
 
         const createAssetsTableSql = `
             CREATE TABLE IF NOT EXISTS \`${assetTableName}\` (
@@ -200,11 +204,13 @@ const main = async () => {
                 data_scadenza DATE NULL,
                 rinnovo_data DATE NULL,
                 rinnovo_da VARCHAR(100) NULL,
+                rinnovo_riferimento INT NULL,
                 costo_ie DECIMAL(10,2) NULL,
                 importo_ie DECIMAL(10,2) NULL,
                 fattura_numero VARCHAR(100) NULL,
                 fattura_tipo_invio VARCHAR(50) NULL,
                 fattura_tipo_pagamento VARCHAR(50) NULL,
+                fattura_data_pagamento DATE NULL,
                 note VARCHAR(255) NULL,
                 created_at TIMESTAMP NULL,
                 updated_at TIMESTAMP NULL,
@@ -218,6 +224,30 @@ const main = async () => {
         await connection.query(createRenewalsTableSql);
         console.log(
             `Tabella '${renewalTableName}' verificata/creata con successo nel database '${database}'.`
+        );
+
+        const ensureRenewalColumn = async (alterStatement, columnName) => {
+            try {
+                await connection.query(
+                    `ALTER TABLE \`${renewalTableName}\` ${alterStatement};`
+                );
+                console.log(
+                    `Colonna '${columnName}' aggiunta/aggiornata nella tabella '${renewalTableName}'.`
+                );
+            } catch (error) {
+                if (error.code !== 'ER_DUP_FIELDNAME') {
+                    throw error;
+                }
+            }
+        };
+
+        await ensureRenewalColumn(
+            'ADD COLUMN fattura_data_pagamento DATE NULL AFTER fattura_tipo_pagamento',
+            'fattura_data_pagamento'
+        );
+        await ensureRenewalColumn(
+            'ADD COLUMN rinnovo_riferimento INT NULL AFTER rinnovo_da',
+            'rinnovo_riferimento'
         );
     } finally {
         await connection.end();

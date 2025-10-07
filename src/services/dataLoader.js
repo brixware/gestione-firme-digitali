@@ -66,17 +66,25 @@ const RENEWAL_COLUMN_MAPPING = {
     'CERTIFICATO CFD': 'certificato_cfd',
     'CERTIFICATO CFD-R': 'certificato_cfd_r',
     'Data Emissione': 'data_emissione',
+    Emissione: 'data_emissione',
     'Data Scadenza': 'data_scadenza',
+    Scadenza: 'data_scadenza',
     'Rinnovo Data': 'rinnovo_data',
     'Rinnovo DA': 'rinnovo_da',
     'Costo (i.e.)': 'costo_ie',
+    'Fatturazione Costo (i.e.)': 'costo_ie',
     'Importo (i.e.)': 'importo_ie',
+    'Fatturazione Importo (i.e.)': 'importo_ie',
     'Fatturazione N° Documento': 'fattura_numero',
     'Fatturazione Tipo Invio': 'fattura_tipo_invio',
     'Fatturazione Tipo Pag.': 'fattura_tipo_pagamento',
     'Tipo Invio': 'fattura_tipo_invio',
     'Tipo Pag.': 'fattura_tipo_pagamento',
-    Note: 'note'
+    Note: 'note',
+    'Note ': 'note',
+    'column_16': 'note',
+    'column_17': 'note',
+    'column_18': 'note'
 };
 
 const BOOLEAN_COLUMNS = new Set();
@@ -477,6 +485,17 @@ const normaliseMasterRecord = (rawRecord) => {
             return;
         }
 
+        if (key === 'fattura_tipo_pagamento') {
+            const parsedDate = parseDate(value);
+            if (parsedDate) {
+                baseNormalised.fattura_tipo_pagamento = 'Altro';
+                baseNormalised.fattura_data_pagamento = parsedDate;
+            } else {
+                baseNormalised.fattura_tipo_pagamento = parseGenericValue(value);
+            }
+            return;
+        }
+
         baseNormalised[key] = parseGenericValue(value);
     });
 
@@ -488,6 +507,12 @@ const normaliseMasterRecord = (rawRecord) => {
 
     if (!baseNormalised.titolare) {
         baseNormalised.titolare = '';
+    }
+    if (!('fattura_tipo_pagamento' in baseNormalised)) {
+        baseNormalised.fattura_tipo_pagamento = null;
+    }
+    if (!('fattura_data_pagamento' in baseNormalised)) {
+        baseNormalised.fattura_data_pagamento = null;
     }
 
     const assetsNormalised = Array.from(assetMap.values())
@@ -544,6 +569,25 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
         if (!target) {
             return;
         }
+
+        if (target.value === 'note') {
+            const parsedNote = parseGenericValue(rawValue);
+            if (!parsedNote) {
+                return;
+            }
+            if (mapped.note) {
+                const existing = parseGenericValue(mapped.note);
+                if (existing && existing !== parsedNote) {
+                    mapped.note = `${existing} | ${parsedNote}`;
+                } else if (!existing) {
+                    mapped.note = parsedNote;
+                }
+            } else {
+                mapped.note = parsedNote;
+            }
+            return;
+        }
+
         mapped[target.value] = rawValue;
     });
 
@@ -564,14 +608,36 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
         data_emissione: parseDate(mapped.data_emissione),
         data_scadenza: parseDate(mapped.data_scadenza),
         rinnovo_data: parseDate(mapped.rinnovo_data),
-        rinnovo_da: parseGenericValue(mapped.rinnovo_da),
+        rinnovo_da: null,
+        rinnovo_riferimento: null,
         costo_ie: parseMoney(mapped.costo_ie),
         importo_ie: parseMoney(mapped.importo_ie),
         fattura_numero: parseGenericValue(mapped.fattura_numero),
         fattura_tipo_invio: parseGenericValue(mapped.fattura_tipo_invio),
-        fattura_tipo_pagamento: parseGenericValue(mapped.fattura_tipo_pagamento),
+        fattura_tipo_pagamento: null,
+        fattura_data_pagamento: null,
         note: parseGenericValue(mapped.note)
     };
+
+    const rinnovoDaRaw = parseGenericValue(mapped.rinnovo_da);
+    if (rinnovoDaRaw) {
+        const match = rinnovoDaRaw.match(/NE-?\s*(\d+)/i);
+        if (match) {
+            const referenceId = Number.parseInt(match[1], 10);
+            record.rinnovo_da = `NE-${match[1]}`;
+            record.rinnovo_riferimento = Number.isNaN(referenceId) ? null : referenceId;
+        } else {
+            record.rinnovo_da = rinnovoDaRaw;
+        }
+    }
+
+    const paymentDate = parseDate(mapped.fattura_tipo_pagamento);
+    if (paymentDate) {
+        record.fattura_tipo_pagamento = 'Altro';
+        record.fattura_data_pagamento = paymentDate;
+    } else {
+        record.fattura_tipo_pagamento = parseGenericValue(mapped.fattura_tipo_pagamento);
+    }
 
     return record;
 };
@@ -738,6 +804,7 @@ const replaceRenewals = async (connection, renewalTableName, renewals) => {
         'fattura_numero',
         'fattura_tipo_invio',
         'fattura_tipo_pagamento',
+        'fattura_data_pagamento',
         'note',
         'created_at',
         'updated_at'
@@ -748,7 +815,9 @@ const replaceRenewals = async (connection, renewalTableName, renewals) => {
 
     for (let i = 0; i < renewals.length; i += chunkSize) {
         const chunk = renewals.slice(i, i + chunkSize);
-        const placeholders = chunk.map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`).join(', ');
+        const placeholders = chunk
+            .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`)
+            .join(', ');
         const params = [];
 
         chunk.forEach((renewal) => {
@@ -770,6 +839,7 @@ const replaceRenewals = async (connection, renewalTableName, renewals) => {
                 renewal.fattura_numero,
                 renewal.fattura_tipo_invio,
                 renewal.fattura_tipo_pagamento,
+                renewal.fattura_data_pagamento,
                 renewal.note || null
             );
         });
