@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: gestione_firme_mysql
+    restart: unless-stopped
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-gestione_firme}
+      MYSQL_USER: ${MYSQL_USER:-gestione_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-gestione_pass}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  mysql_data:

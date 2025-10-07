@@ -1,0 +1,18 @@
+# Node dependencies
+node_modules/
+
+# Environment / secrets
+.env
+
+# Build outputs / uploads
+uploads/
+
+# Logs and temp files
+npm-debug.log*
+*.log
+
+# macOS artifacts
+.DS_Store
+
+# Misc
+coverage/
