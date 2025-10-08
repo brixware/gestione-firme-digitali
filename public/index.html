@@ -33,6 +33,10 @@
                     </div>
                 </div>
             </nav>
+            <div class="sidebar-footer">
+                <span class="sidebar-version">Versione 1.0</span>
+                <span class="sidebar-copy">&copy; Brixware</span>
+            </div>
         </aside>
 
         <main class="content">
@@ -192,27 +196,27 @@
                 </div>
                 <form id="insert-form" class="form-grid">
                     <div class="form-row">
-                        <label for="si-id">ID</label>
+                        <label for="si-id">ID *</label>
                         <div class="row-inline">
-                            <input id="si-id" name="id" type="number" min="1" placeholder="(vuoto = prossimo)">
+                            <input id="si-id" name="id" type="number" min="1" placeholder="Es. 123" required aria-required="true">
                             <button id="si-nextid" type="button" class="btn" title="Suggerisci prossimo ID">Prossimo ID</button>
                         </div>
                     </div>
                     <div class="form-row">
                         <label for="si-titolare">Titolare *</label>
-                        <input id="si-titolare" name="titolare" type="text" required>
+                        <input id="si-titolare" name="titolare" type="text" required aria-required="true">
                     </div>
                     <div class="form-row">
-                        <label for="si-email">Email</label>
-                        <input id="si-email" name="email" type="email">
+                        <label for="si-email">Email *</label>
+                        <input id="si-email" name="email" type="email" required aria-required="true">
                     </div>
                     <div class="form-row">
-                        <label for="si-recapito">Recapito</label>
-                        <input id="si-recapito" name="recapito_telefonico" type="text">
+                        <label for="si-recapito">Recapito *</label>
+                        <input id="si-recapito" name="recapito_telefonico" type="text" required aria-required="true">
                     </div>
                     <div class="form-row">
-                        <label for="si-data">Data Emissione</label>
-                        <input id="si-data" name="data_emissione" type="date">
+                        <label for="si-data">Data Emissione *</label>
+                        <input id="si-data" name="data_emissione" type="date" required aria-required="true">
                     </div>
                     <div class="form-row">
                         <label for="si-emesso">Emesso da</label>
@@ -226,20 +230,24 @@
                         <label for="si-finvio">Tipo invio</label>
                         <input id="si-finvio" name="fattura_tipo_invio" type="text">
                     </div>
-                    <div class="form-row">
-                        <label for="si-paid">Pagato</label>
-                        <input id="si-paid" name="paid" type="checkbox">
+                    <div class="form-row toggle-row">
+                        <label for="si-paid" class="toggle-label">Pagato</label>
+                        <label class="toggle-switch">
+                            <input id="si-paid" name="paid" type="checkbox">
+                            <span class="toggle-track" aria-hidden="true"></span>
+                        </label>
                     </div>
                     <div class="form-row">
-                        <label for="si-costo">Costo (i.e.)</label>
-                        <input id="si-costo" name="costo_ie" type="number" step="0.01">
+                        <label for="si-costo">Costo (i.e.) *</label>
+                        <input id="si-costo" name="costo_ie" type="number" step="0.01" required aria-required="true">
                     </div>
                     <div class="form-row">
-                        <label for="si-importo">Importo (i.e.)</label>
-                        <input id="si-importo" name="importo_ie" type="number" step="0.01">
+                        <label for="si-importo">Importo (i.e.) *</label>
+                        <input id="si-importo" name="importo_ie" type="number" step="0.01" required aria-required="true">
                     </div>
                     <div class="form-actions">
                         <button type="submit" class="btn">Salva</button>
+                        <button type="button" class="btn btn-secondary" id="si-reset">Pulisci</button>
                         <span id="si-msg" class="muted"></span>
                     </div>
                 </form>
