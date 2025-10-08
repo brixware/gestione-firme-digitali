@@ -893,14 +893,15 @@ const replaceRenewals = async (connection, renewalTableName, renewals) => {
         'updated_at'
     ];
 
+    const dataColumns = columns.slice(0, -2);
+    const placeholdersPerRow = `(${dataColumns.map(() => '?').join(', ')}, NOW(), NOW())`;
+
     const chunkSize = 500;
     let inserted = 0;
 
     for (let i = 0; i < renewals.length; i += chunkSize) {
         const chunk = renewals.slice(i, i + chunkSize);
-        const placeholders = chunk
-            .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`)
-            .join(', ');
+        const placeholders = Array(chunk.length).fill(placeholdersPerRow).join(', ');
         const params = [];
 
         chunk.forEach((renewal) => {
