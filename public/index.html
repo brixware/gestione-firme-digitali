@@ -20,6 +20,7 @@
             <nav class="nav">
                 <a href="#" class="nav-link active" data-view="dashboard-view">Dashboard</a>
                 <a href="#" class="nav-link" data-view="upload-view">Carica XLS</a>
+                <a href="#" class="nav-link" data-view="statistics-view">Statistiche</a>
                 <div class="accordion">
                     <button class="accordion-header" aria-expanded="false" type="button">
                         <span>Firme Digitali</span>
@@ -37,7 +38,7 @@
         <main class="content">
             <section id="dashboard-view" class="view active">
                 <h1>Dashboard</h1>
-                <p class="muted">Firme digitali in scadenza nei prossimi giorni</p>
+                <p class="muted">Firme digitali in scadenza nei prossimi giorni <span id="exp-badge" class="badge">0</span></p>
                 <div class="controls">
                     <div class="left">
                         <label>Giorni
@@ -84,7 +85,10 @@
                     <button id="exp-next" class="btn" disabled>Successiva »</button>
                 </div>
 
-                <h1 style="margin-top:24px;">Statistiche annuali</h1>
+            </section>
+
+            <section id="statistics-view" class="view">
+                <h1>Statistiche annuali</h1>
                 <div class="grid-2">
                     <div class="card">
                         <h2 class="card-title">Emesse per anno</h2>
@@ -118,6 +122,13 @@
                                 <option value="100">100</option>
                             </select>
                         </label>
+                        <label style="margin-left:10px;">Firme Digitali
+                            <select id="f-paid">
+                                <option value="">Tutte</option>
+                                <option value="1">Pagate</option>
+                                <option value="0">Non pagate</option>
+                            </select>
+                        </label>
                     </div>
                     <div class="right" id="sig-range">Mostrando 0–0 di 0</div>
                 </div>
@@ -134,7 +145,7 @@
                                 <th data-sort="importo_ie">Importo (i.e.)</th>
                                 <th data-sort="fattura_numero">Fattura N.</th>
                                 <th data-sort="fattura_tipo_invio">Tipo invio</th>
-                                <th>Rinnovi</th>
+                                <th>Azioni</th>
                             </tr>
                             <tr class="filters">
                                 <th><input id="f-id" type="number" min="0" placeholder="ID" /></th>
@@ -160,7 +171,78 @@
 
             <section id="signature-insert-view" class="view">
                 <h1>Inserisci Firma</h1>
-                <p class="muted">Prossimamente: form per inserire una nuova firma digitale.</p>
+                <div class="card" style="margin-bottom:12px;">
+                    <h2 class="card-title">Usa dati esistenti</h2>
+                    <div class="inline-tools">
+                        <div class="field">
+                            <label for="si-search">Cerca (titolare, email o fattura)</label>
+                            <div class="search-wrap">
+                                <input id="si-search" type="text" placeholder="Digita almeno 2 caratteri...">
+                                <div id="si-suggest" class="suggest hidden"></div>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="si-load-id">Carica da ID</label>
+                            <div class="row-inline">
+                                <input id="si-load-id" type="number" min="1" placeholder="ID esistente">
+                                <button id="si-load-btn" type="button" class="btn">Carica</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <form id="insert-form" class="form-grid">
+                    <div class="form-row">
+                        <label for="si-id">ID</label>
+                        <div class="row-inline">
+                            <input id="si-id" name="id" type="number" min="1" placeholder="(vuoto = prossimo)">
+                            <button id="si-nextid" type="button" class="btn" title="Suggerisci prossimo ID">Prossimo ID</button>
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label for="si-titolare">Titolare *</label>
+                        <input id="si-titolare" name="titolare" type="text" required>
+                    </div>
+                    <div class="form-row">
+                        <label for="si-email">Email</label>
+                        <input id="si-email" name="email" type="email">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-recapito">Recapito</label>
+                        <input id="si-recapito" name="recapito_telefonico" type="text">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-data">Data Emissione</label>
+                        <input id="si-data" name="data_emissione" type="date">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-emesso">Emesso da</label>
+                        <input id="si-emesso" name="emesso_da" type="text">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-fnum">Fattura N.</label>
+                        <input id="si-fnum" name="fattura_numero" type="text">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-finvio">Tipo invio</label>
+                        <input id="si-finvio" name="fattura_tipo_invio" type="text">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-paid">Pagato</label>
+                        <input id="si-paid" name="paid" type="checkbox">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-costo">Costo (i.e.)</label>
+                        <input id="si-costo" name="costo_ie" type="number" step="0.01">
+                    </div>
+                    <div class="form-row">
+                        <label for="si-importo">Importo (i.e.)</label>
+                        <input id="si-importo" name="importo_ie" type="number" step="0.01">
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn">Salva</button>
+                        <span id="si-msg" class="muted"></span>
+                    </div>
+                </form>
             </section>
 
             <section id="signature-renew-view" class="view">

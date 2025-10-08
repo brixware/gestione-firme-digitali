@@ -117,6 +117,7 @@ const main = async () => {
                 fattura_numero VARCHAR(100) NULL,
                 fattura_tipo_invio VARCHAR(50) NULL,
                 fattura_tipo_pagamento VARCHAR(50) NULL,
+                fattura_pagata TINYINT(1) NOT NULL DEFAULT 0,
                 note VARCHAR(255) NULL,
                 created_at TIMESTAMP NULL,
                 updated_at TIMESTAMP NULL,
@@ -148,6 +149,10 @@ const main = async () => {
         await ensureColumn(
             'ADD COLUMN data_riferimento_incasso DATE NULL AFTER fattura_tipo_pagamento',
             'data_riferimento_incasso'
+        );
+        await ensureColumn(
+            'ADD COLUMN fattura_pagata TINYINT(1) NOT NULL DEFAULT 0 AFTER fattura_tipo_pagamento',
+            'fattura_pagata'
         );
 
         const createAssetsTableSql = `

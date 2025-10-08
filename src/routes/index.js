@@ -45,7 +45,8 @@ router.get('/signatures', async (req, res) => {
             titolare: req.query.titolare,
             email: req.query.email,
             fattura_numero: req.query.fattura_numero,
-            emesso_da: req.query.emesso_da
+            emesso_da: req.query.emesso_da,
+            paid: req.query.paid
         };
 
         const whereParts = [];
@@ -72,6 +73,15 @@ router.get('/signatures', async (req, res) => {
             params.push(`%${String(filters.emesso_da).trim()}%`);
         }
 
+        if (filters.paid !== undefined && filters.paid !== '' && filters.paid !== null) {
+            const paidVal = String(filters.paid).trim();
+            if (paidVal === '1' || paidVal.toLowerCase() === 'true') {
+                whereParts.push('fattura_pagata = 1');
+            } else if (paidVal === '0' || paidVal.toLowerCase() === 'false') {
+                whereParts.push('fattura_pagata = 0');
+            }
+        }
+
         const whereSql = whereParts.length ? `WHERE ${whereParts.join(' AND ')}` : '';
 
         // Ordinamento
@@ -85,7 +95,9 @@ router.get('/signatures', async (req, res) => {
             'costo_ie',
             'importo_ie',
             'fattura_numero',
-            'fattura_tipo_invio'
+            'fattura_tipo_invio',
+            'paid',
+            'fattura_pagata'
         ]);
         const sortByRaw = String(req.query.sortBy || 'id');
         const sortBy = ALLOWED_SORT.has(sortByRaw) ? sortByRaw : 'id';
@@ -94,7 +106,8 @@ router.get('/signatures', async (req, res) => {
         const countSql = `SELECT COUNT(*) AS total FROM \`${tableName}\` ${whereSql}`;
         const [[{ total }]] = await db.pool.query(countSql, params);
 
-        const dataSql = `SELECT id, titolare, email, recapito_telefonico, data_emissione, emesso_da, costo_ie, importo_ie, fattura_numero, fattura_tipo_invio
+        const dataSql = `SELECT id, titolare, email, recapito_telefonico, data_emissione, emesso_da, costo_ie, importo_ie, fattura_numero, fattura_tipo_invio,
+                         IFNULL(fattura_pagata, CASE WHEN data_riferimento_incasso IS NOT NULL THEN 1 ELSE 0 END) AS paid
                          FROM \`${tableName}\`
                          ${whereSql}
                          ORDER BY ${sortBy} ${sortDir}
@@ -109,35 +122,167 @@ router.get('/signatures', async (req, res) => {
     }
 });
 
-// GET /api/signatures/:id/renewals
-router.get('/signatures/:id/renewals', async (req, res) => {
+// PATCH /api/signatures/:id/paid { paid: 0|1 }
+router.patch('/signatures/:id/paid', async (req, res) => {
     try {
         const id = parseInt(String(req.params.id), 10);
-        if (Number.isNaN(id) || id <= 0) {
+        if (!Number.isFinite(id) || id <= 0) {
             return res.status(400).json({ message: 'ID non valido' });
         }
-
-        const baseTableEnv = process.env.DB_RENEWAL_TABLE || `${(process.env.DB_TABLE || 'digital_signatures').replace(/[^a-zA-Z0-9_]/g, '')}_renewals`;
-        const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures_renewals';
-
-        const [rows] = await db.pool.query(
-            `SELECT id, signature_id, sheet_name, email, recapito_telefonico,
-                    certificato_cns_l, certificato_cns, certificato_cfd, certificato_cfd_r,
-                    data_emissione, data_scadenza, rinnovo_data, rinnovo_da, nuova_emissione_id,
-                    costo_ie, importo_ie, fattura_numero, fattura_tipo_invio, fattura_tipo_pagamento,
-                    data_riferimento_incasso, note, created_at, updated_at
-             FROM \`${tableName}\`
-             WHERE signature_id = ?
-             ORDER BY (rinnovo_data IS NULL), rinnovo_data ASC, id ASC`,
-            [id]
-        );
-
-        res.json({ data: rows });
+        const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
+        const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
+        const paidRaw = (req.body && req.body.paid) ?? null;
+        if (paidRaw === null || paidRaw === undefined) {
+            return res.status(400).json({ message: 'Campo paid mancante' });
+        }
+        const paid = paidRaw === true || paidRaw === 1 || paidRaw === '1' || String(paidRaw).toLowerCase() === 'true' ? 1 : 0;
+        // Se settiamo a pagata, imposta data_riferimento_incasso se assente; se togliamo pagamento, azzera la data
+        const sql = `UPDATE \`${tableName}\`
+                    SET fattura_pagata = ?,
+                        data_riferimento_incasso = CASE WHEN ? = 1 THEN IFNULL(data_riferimento_incasso, CURDATE()) ELSE NULL END,
+                        updated_at = NOW()
+                    WHERE id = ?`;
+        const [result] = await db.pool.query(sql, [paid, paid, id]);
+        if (result.affectedRows === 0) {
+            return res.status(404).json({ message: 'Firma non trovata' });
+        }
+        res.json({ message: 'Aggiornato', id, paid });
     } catch (error) {
-        console.error('Errore renewals:', error);
-        res.status(500).json({ message: 'Errore nel recupero dei rinnovi.' });
+        console.error('Errore toggle paid:', error);
+        res.status(500).json({ message: 'Errore aggiornamento pagamento.' });
     }
 });
+
+// GET /api/signatures/search?q=...&limit=20
+router.get('/signatures/search', async (req, res) => {
+    try {
+        const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
+        const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
+        const q = String(req.query.q || '').trim();
+        const rawLimit = parseInt(String(req.query.limit || '20'), 10);
+        const limit = Number.isNaN(rawLimit) ? 20 : Math.max(1, Math.min(100, rawLimit));
+        if (q.length < 2) {
+            return res.json({ data: [] });
+        }
+
+        const like = `%${q}%`;
+        const [rows] = await db.pool.query(
+            `SELECT id, titolare, email, recapito_telefonico
+             FROM \`${tableName}\`
+             WHERE titolare LIKE ? OR email LIKE ? OR fattura_numero LIKE ?
+             ORDER BY titolare ASC
+             LIMIT ?`,
+            [like, like, like, limit]
+        );
+        res.json({ data: rows });
+    } catch (error) {
+        console.error('Errore search signatures:', error);
+        res.status(500).json({ message: 'Errore nella ricerca.' });
+    }
+});
+
+// GET /api/signatures/next-id (definito prima di /:id per evitare conflitti)
+router.get('/signatures/next-id', async (req, res) => {
+    try {
+        const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
+        const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
+        const [[row]] = await db.pool.query(`SELECT IFNULL(MAX(id),0)+1 AS nextId FROM \`${tableName}\``);
+        res.json({ nextId: row?.nextId || 1 });
+    } catch (error) {
+        console.error('Errore next-id:', error);
+        res.status(500).json({ message: 'Errore nel calcolo del prossimo ID.' });
+    }
+});
+
+
+// Utility: parse simple date strings to YYYY-MM-DD
+const toSqlDate = (value) => {
+    if (!value) return null;
+    if (typeof value === 'string') {
+        const t = value.trim();
+        const m1 = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (m1) {
+            const y = m1[1];
+            const mm = String(parseInt(m1[2], 10)).padStart(2, '0');
+            const dd = String(parseInt(m1[3], 10)).padStart(2, '0');
+            return `${y}-${mm}-${dd}`;
+        }
+        const m2 = t.replace(/\./g, '/').replace(/-/g, '/').match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+        if (m2) {
+            let y = parseInt(m2[3], 10);
+            if (y < 100) y += y >= 50 ? 1900 : 2000;
+            const mm = String(parseInt(m2[2], 10)).padStart(2, '0');
+            const dd = String(parseInt(m2[1], 10)).padStart(2, '0');
+            return `${y}-${mm}-${dd}`;
+        }
+    }
+    return null;
+};
+
+// (next-id definito sopra)
+
+// POST /api/signatures
+router.post('/signatures', async (req, res) => {
+    try {
+        const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
+        const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
+
+        const body = req.body || {};
+        let { id } = body;
+        const til = (v) => (typeof v === 'string' ? v.trim() : v);
+        const titolare = til(body.titolare || '');
+        if (!titolare) return res.status(400).json({ message: 'Campo titolare obbligatorio.' });
+
+        if (id == null || id === '') {
+            const [[row]] = await db.pool.query(`SELECT IFNULL(MAX(id),0)+1 AS nextId FROM \`${tableName}\``);
+            id = row?.nextId || 1;
+        } else {
+            id = parseInt(String(id), 10);
+            if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ message: 'ID non valido.' });
+        }
+
+        const email = til(body.email || null);
+        const recapito_telefonico = til(body.recapito_telefonico || null);
+        const data_emissione = toSqlDate(body.data_emissione) || null;
+        const emesso_da = til(body.emesso_da || null);
+        const fattura_numero = til(body.fattura_numero || null);
+        const fattura_tipo_invio = til(body.fattura_tipo_invio || null);
+        const costo_ie = body.costo_ie != null ? Number.parseFloat(body.costo_ie) : null;
+        const importo_ie = body.importo_ie != null ? Number.parseFloat(body.importo_ie) : null;
+        const paidRaw = body.paid;
+        const paid = paidRaw === true || paidRaw === 1 || paidRaw === '1' || String(paidRaw).toLowerCase() === 'true';
+        // Se pagata e non è stata fornita una data di incasso, usa la data odierna
+        const nowDate = new Date();
+        const today = `${nowDate.getFullYear()}-${String(nowDate.getMonth()+1).padStart(2,'0')}-${String(nowDate.getDate()).padStart(2,'0')}`;
+        const data_riferimento_incasso = paid && !body.data_riferimento_incasso ? today : (toSqlDate(body.data_riferimento_incasso) || null);
+
+        // Try insert; if duplicate id, return conflict
+        const sql = `INSERT INTO \`${tableName}\` (id, titolare, email, recapito_telefonico, data_emissione, emesso_da, costo_ie, importo_ie, fattura_numero, fattura_tipo_invio, data_riferimento_incasso, fattura_pagata, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`;
+        await db.pool.query(sql, [
+            id,
+            titolare,
+            email,
+            recapito_telefonico,
+            data_emissione,
+            emesso_da,
+            isNaN(costo_ie) ? null : costo_ie,
+            isNaN(importo_ie) ? null : importo_ie,
+            fattura_numero,
+            fattura_tipo_invio,
+            data_riferimento_incasso,
+            paid ? 1 : 0
+        ]);
+        res.status(201).json({ message: 'Firma inserita correttamente.', id });
+    } catch (error) {
+        if (error && error.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ message: 'ID già esistente. Scegli un altro ID.' });
+        }
+        console.error('Errore insert signature:', error);
+        res.status(500).json({ message: 'Errore durante l\'inserimento.' });
+    }
+});
+
 
 // GET /api/signatures/expiring?days=15&limit=50
 router.get('/signatures/expiring', async (req, res) => {
@@ -162,19 +307,17 @@ router.get('/signatures/expiring', async (req, res) => {
 
         const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
         const baseTable = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
-        const renewalTableEnv =
-            process.env.DB_RENEWAL_TABLE || `${baseTable}_renewals`;
+        const renewalTableEnv = process.env.DB_RENEWAL_TABLE || `${baseTable}_renewals`;
         const renewalTable = renewalTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || `${baseTable}_renewals`;
 
         // Total count
         const [countRows] = await db.pool.query(
             `SELECT COUNT(*) AS total FROM (
-                SELECT s.id
-                FROM \`${baseTable}\` s
-                JOIN \`${renewalTable}\` r ON r.signature_id = s.id
+                SELECT r.signature_id AS id
+                FROM \`${renewalTable}\` r
                 WHERE r.data_scadenza IS NOT NULL
                   AND r.data_scadenza BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
-                GROUP BY s.id
+                GROUP BY r.signature_id
             ) t`,
             [days]
         );
@@ -182,18 +325,17 @@ router.get('/signatures/expiring', async (req, res) => {
 
         // Page data
         const [rows] = await db.pool.query(
-            `SELECT s.id,
+            `SELECT r.signature_id AS id,
                     s.titolare,
                     s.email,
                     s.recapito_telefonico,
                     MIN(r.data_scadenza) AS data_scadenza,
                     DATEDIFF(MIN(r.data_scadenza), CURDATE()) AS days_left
-             FROM \`${baseTable}\` s
-             JOIN \`${renewalTable}\` r ON r.signature_id = s.id
+             FROM \`${renewalTable}\` r
+             LEFT JOIN \`${baseTable}\` s ON s.id = r.signature_id
              WHERE r.data_scadenza IS NOT NULL
                AND r.data_scadenza BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
-             GROUP BY s.id, s.titolare, s.email, s.recapito_telefonico
-             HAVING MIN(r.data_scadenza) IS NOT NULL
+             GROUP BY r.signature_id, s.titolare, s.email, s.recapito_telefonico
              ORDER BY data_scadenza ASC
              LIMIT ? OFFSET ?`,
             [days, pageSize, offset]
@@ -251,4 +393,59 @@ router.get('/signatures/stats/renewals/yearly', async (req, res) => {
     }
 });
 
+// GET /api/signatures/:id (dettaglio semplice)
+router.get('/signatures/:id', async (req, res) => {
+    try {
+        const id = parseInt(String(req.params.id), 10);
+        if (Number.isNaN(id) || id <= 0) {
+            return res.status(400).json({ message: 'ID non valido' });
+        }
+        const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
+        const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
+        const [rows] = await db.pool.query(
+            `SELECT id, titolare, email, recapito_telefonico, data_emissione, emesso_da, costo_ie, importo_ie, fattura_numero, fattura_tipo_invio
+             FROM \`${tableName}\`
+             WHERE id = ?
+             LIMIT 1`,
+            [id]
+        );
+        if (!rows || rows.length === 0) {
+            return res.status(404).json({ message: 'Firma non trovata' });
+        }
+        res.json({ data: rows[0] });
+    } catch (error) {
+        console.error('Errore get signature:', error);
+        res.status(500).json({ message: 'Errore nel recupero della firma.' });
+    }
+});
+
+// GET /api/signatures/:id/renewals
+router.get('/signatures/:id/renewals', async (req, res) => {
+    try {
+        const id = parseInt(String(req.params.id), 10);
+        if (Number.isNaN(id) || id <= 0) {
+            return res.status(400).json({ message: 'ID non valido' });
+        }
+
+        const baseTableEnv = process.env.DB_RENEWAL_TABLE || `${(process.env.DB_TABLE || 'digital_signatures').replace(/[^a-zA-Z0-9_]/g, '')}_renewals`;
+        const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures_renewals';
+
+        const [rows] = await db.pool.query(
+            `SELECT id, signature_id, sheet_name, email, recapito_telefonico,
+                    certificato_cns_l, certificato_cns, certificato_cfd, certificato_cfd_r,
+                    data_emissione, data_scadenza, rinnovo_data, rinnovo_da, nuova_emissione_id,
+                    costo_ie, importo_ie, fattura_numero, fattura_tipo_invio, fattura_tipo_pagamento,
+                    data_riferimento_incasso, note, created_at, updated_at
+             FROM \`${tableName}\`
+             WHERE signature_id = ?
+             ORDER BY (rinnovo_data IS NULL), rinnovo_data ASC, id ASC`,
+            [id]
+        );
+
+        res.json({ data: rows });
+    } catch (error) {
+        console.error('Errore renewals:', error);
+        res.status(500).json({ message: 'Errore nel recupero dei rinnovi.' });
+    }
+});
 module.exports = router;
