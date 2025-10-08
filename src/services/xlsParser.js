@@ -1,7 +1,7 @@
 const xlsx = require('xlsx');
 
 function parseWorkbook(filePath) {
-    const workbook = xlsx.readFile(filePath);
+    const workbook = xlsx.readFile(filePath, { cellStyles: true });
 
     return workbook.SheetNames.map((sheetName, index) => {
         const worksheet = workbook.Sheets[sheetName];
@@ -14,7 +14,8 @@ function parseWorkbook(filePath) {
         return {
             index,
             name: sheetName,
-            rows
+            rows,
+            worksheet
         };
     });
 }

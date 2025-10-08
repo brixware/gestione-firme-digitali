@@ -145,8 +145,8 @@ const main = async () => {
             'recapito_telefonico'
         );
         await ensureColumn(
-            'ADD COLUMN fattura_data_pagamento DATE NULL AFTER fattura_tipo_pagamento',
-            'fattura_data_pagamento'
+            'ADD COLUMN data_riferimento_incasso DATE NULL AFTER fattura_tipo_pagamento',
+            'data_riferimento_incasso'
         );
 
         const createAssetsTableSql = `
@@ -204,20 +204,24 @@ const main = async () => {
                 data_scadenza DATE NULL,
                 rinnovo_data DATE NULL,
                 rinnovo_da VARCHAR(100) NULL,
-                rinnovo_riferimento INT NULL,
+                nuova_emissione_id INT NULL,
                 costo_ie DECIMAL(10,2) NULL,
                 importo_ie DECIMAL(10,2) NULL,
                 fattura_numero VARCHAR(100) NULL,
                 fattura_tipo_invio VARCHAR(50) NULL,
                 fattura_tipo_pagamento VARCHAR(50) NULL,
-                fattura_data_pagamento DATE NULL,
+                data_riferimento_incasso DATE NULL,
                 note VARCHAR(255) NULL,
                 created_at TIMESTAMP NULL,
                 updated_at TIMESTAMP NULL,
                 PRIMARY KEY (id),
+                KEY idx_${renewalTableName}_nuova_emissione (nuova_emissione_id),
                 CONSTRAINT fk_${renewalTableName}_signature
                     FOREIGN KEY (signature_id) REFERENCES \`${tableName}\`(id)
-                    ON DELETE CASCADE ON UPDATE CASCADE
+                    ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT fk_${renewalTableName}_nuova_emissione
+                    FOREIGN KEY (nuova_emissione_id) REFERENCES \`${tableName}\`(id)
+                    ON DELETE SET NULL ON UPDATE CASCADE
             ) ENGINE=InnoDB DEFAULT CHARSET=${activeCharset} COLLATE=${activeCollation};
         `;
 
@@ -242,12 +246,12 @@ const main = async () => {
         };
 
         await ensureRenewalColumn(
-            'ADD COLUMN fattura_data_pagamento DATE NULL AFTER fattura_tipo_pagamento',
-            'fattura_data_pagamento'
+            'ADD COLUMN data_riferimento_incasso DATE NULL AFTER fattura_tipo_pagamento',
+            'data_riferimento_incasso'
         );
         await ensureRenewalColumn(
-            'ADD COLUMN rinnovo_riferimento INT NULL AFTER rinnovo_da',
-            'rinnovo_riferimento'
+            'ADD COLUMN nuova_emissione_id INT NULL AFTER rinnovo_da',
+            'nuova_emissione_id'
         );
     } finally {
         await connection.end();

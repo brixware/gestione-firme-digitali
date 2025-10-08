@@ -1,5 +1,6 @@
 const fs = require('fs/promises');
 const path = require('path');
+const xlsx = require('xlsx');
 const dbConnector = require('./dbConnector');
 const { parseWorkbook } = require('./xlsParser');
 const { isEmpty } = require('../utils/helpers');
@@ -164,6 +165,45 @@ const createDefinitions = (mapping) => {
 const ASSET_DEFINITIONS = createDefinitions(ASSET_COLUMN_MAPPING);
 const DOCUMENT_DEFINITIONS = createDefinitions(DOCUMENT_COLUMN_MAPPING);
 
+const BLUE_FILL_RGB = new Set(['FFCFE7F5', 'FFC1E5F5', 'FF99CCFF', 'FF7FB3FF']);
+const BLUE_BG_INDEXES = new Set([41, 42, 43, 9]);
+
+const isBlueHighlight = (cell) => {
+    if (!cell || !cell.s) {
+        return false;
+    }
+
+    const { fgColor, bgColor, patternType } = cell.s;
+
+    if (patternType && patternType.toLowerCase() === 'none') {
+        return false;
+    }
+
+    if (fgColor) {
+        if (fgColor.rgb && BLUE_FILL_RGB.has(fgColor.rgb.toUpperCase())) {
+            return true;
+        }
+        if (typeof fgColor.indexed === 'number' && BLUE_BG_INDEXES.has(fgColor.indexed)) {
+            return true;
+        }
+        if (typeof fgColor.theme === 'number') {
+            // theme colors for blue shades commonly 0 or 2, fallback treat as highlight
+            return true;
+        }
+    }
+
+    if (bgColor) {
+        if (bgColor.rgb && BLUE_FILL_RGB.has(bgColor.rgb.toUpperCase())) {
+            return true;
+        }
+        if (typeof bgColor.indexed === 'number' && BLUE_BG_INDEXES.has(bgColor.indexed)) {
+            return true;
+        }
+    }
+
+    return false;
+};
+
 const buildColumnNames = (headerRows) => {
     if (!Array.isArray(headerRows) || headerRows.length === 0) {
         return [];
@@ -243,8 +283,7 @@ const prepareSheetRows = (rows) => {
     const dataRows = rows
         .map((row, index) => ({ row, excelRowNumber: index + 1 }))
         .filter(({ excelRowNumber }) => excelRowNumber >= startRow && excelRowNumber <= endRow)
-        .map(({ row }) => row)
-        .filter(rowHasValues);
+        .filter(({ row }) => rowHasValues(row));
 
     return { columns, dataRows };
 };
@@ -398,7 +437,20 @@ const mapColumnKey = (key, lookup) => {
     return null;
 };
 
-const normaliseMasterRecord = (rawRecord) => {
+const normaliseMasterRecord = (rawRecord, meta = {}) => {
+    const { columns = [], excelRowNumber, worksheet, cnsColumnIndex } = meta;
+    let hasCnsHighlight = false;
+
+    if (
+        worksheet &&
+        typeof excelRowNumber === 'number' &&
+        typeof cnsColumnIndex === 'number' &&
+        cnsColumnIndex >= 0
+    ) {
+        const cellAddress = xlsx.utils.encode_cell({ r: excelRowNumber - 1, c: cnsColumnIndex });
+        const cell = worksheet[cellAddress];
+        hasCnsHighlight = isBlueHighlight(cell);
+    }
     const baseRaw = {};
     const assetMap = new Map(
         ASSET_DEFINITIONS.map((def) => [
@@ -489,7 +541,7 @@ const normaliseMasterRecord = (rawRecord) => {
             const parsedDate = parseDate(value);
             if (parsedDate) {
                 baseNormalised.fattura_tipo_pagamento = 'Altro';
-                baseNormalised.fattura_data_pagamento = parsedDate;
+                baseNormalised.data_riferimento_incasso = parsedDate;
             } else {
                 baseNormalised.fattura_tipo_pagamento = parseGenericValue(value);
             }
@@ -511,8 +563,19 @@ const normaliseMasterRecord = (rawRecord) => {
     if (!('fattura_tipo_pagamento' in baseNormalised)) {
         baseNormalised.fattura_tipo_pagamento = null;
     }
-    if (!('fattura_data_pagamento' in baseNormalised)) {
-        baseNormalised.fattura_data_pagamento = null;
+    if (!('data_riferimento_incasso' in baseNormalised)) {
+        baseNormalised.data_riferimento_incasso = null;
+    }
+
+    if (hasCnsHighlight) {
+        const cnsKey = 'CERTIFICATO::CNS';
+        const cfdKey = 'CERTIFICATO::CFD';
+        if (assetMap.has(cnsKey)) {
+            assetMap.get(cnsKey).value = 1;
+        }
+        if (assetMap.has(cfdKey)) {
+            assetMap.get(cfdKey).value = 1;
+        }
     }
 
     const assetsNormalised = Array.from(assetMap.values())
@@ -609,13 +672,13 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
         data_scadenza: parseDate(mapped.data_scadenza),
         rinnovo_data: parseDate(mapped.rinnovo_data),
         rinnovo_da: null,
-        rinnovo_riferimento: null,
+        nuova_emissione_id: null,
         costo_ie: parseMoney(mapped.costo_ie),
         importo_ie: parseMoney(mapped.importo_ie),
         fattura_numero: parseGenericValue(mapped.fattura_numero),
         fattura_tipo_invio: parseGenericValue(mapped.fattura_tipo_invio),
         fattura_tipo_pagamento: null,
-        fattura_data_pagamento: null,
+        data_riferimento_incasso: null,
         note: parseGenericValue(mapped.note)
     };
 
@@ -623,9 +686,10 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
     if (rinnovoDaRaw) {
         const match = rinnovoDaRaw.match(/NE-?\s*(\d+)/i);
         if (match) {
-            const referenceId = Number.parseInt(match[1], 10);
-            record.rinnovo_da = `NE-${match[1]}`;
-            record.rinnovo_riferimento = Number.isNaN(referenceId) ? null : referenceId;
+            const numericPart = match[1].trim();
+            const referenceId = Number.parseInt(numericPart, 10);
+            record.rinnovo_da = numericPart;
+            record.nuova_emissione_id = Number.isNaN(referenceId) ? null : referenceId;
         } else {
             record.rinnovo_da = rinnovoDaRaw;
         }
@@ -634,7 +698,7 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
     const paymentDate = parseDate(mapped.fattura_tipo_pagamento);
     if (paymentDate) {
         record.fattura_tipo_pagamento = 'Altro';
-        record.fattura_data_pagamento = paymentDate;
+        record.data_riferimento_incasso = paymentDate;
     } else {
         record.fattura_tipo_pagamento = parseGenericValue(mapped.fattura_tipo_pagamento);
     }
@@ -642,12 +706,30 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
     return record;
 };
 
-const buildMasterRecords = (rows) => {
+const buildMasterRecords = (sheet) => {
+    if (!sheet) {
+        return [];
+    }
+
+    const { rows, worksheet } = sheet;
     const { columns, dataRows } = prepareSheetRows(rows);
+    const cnsColumnIndex = columns.findIndex((column) =>
+        standardiseKey(column).toLowerCase() === 'certificato cns'
+    );
 
     return dataRows
-        .map((row) => rowToRecord(row, columns))
-        .map((record) => normaliseMasterRecord(record))
+        .map(({ row, excelRowNumber }) => ({
+            record: rowToRecord(row, columns),
+            excelRowNumber
+        }))
+        .map(({ record, excelRowNumber }) =>
+            normaliseMasterRecord(record, {
+                columns,
+                excelRowNumber,
+                worksheet,
+                cnsColumnIndex
+            })
+        )
         .filter((record) => record !== null);
 };
 
@@ -655,7 +737,7 @@ const buildContactRecords = (rows) => {
     const { columns, dataRows } = prepareSheetRows(rows);
 
     return dataRows
-        .map((row) => rowToRecord(row, columns))
+        .map(({ row }) => rowToRecord(row, columns))
         .map((record) => normaliseContactRecord(record))
         .filter((record) => record !== null);
 };
@@ -664,7 +746,7 @@ const buildRenewalRecords = (rows, sheetName) => {
     const { columns, dataRows } = prepareSheetRows(rows);
 
     return dataRows
-        .map((row) => rowToRecord(row, columns))
+        .map(({ row }) => rowToRecord(row, columns))
         .map((record) => normaliseRenewalRecord(record, sheetName))
         .filter((record) => record !== null);
 };
@@ -799,12 +881,13 @@ const replaceRenewals = async (connection, renewalTableName, renewals) => {
         'data_scadenza',
         'rinnovo_data',
         'rinnovo_da',
+        'nuova_emissione_id',
         'costo_ie',
         'importo_ie',
         'fattura_numero',
         'fattura_tipo_invio',
         'fattura_tipo_pagamento',
-        'fattura_data_pagamento',
+        'data_riferimento_incasso',
         'note',
         'created_at',
         'updated_at'
@@ -816,7 +899,7 @@ const replaceRenewals = async (connection, renewalTableName, renewals) => {
     for (let i = 0; i < renewals.length; i += chunkSize) {
         const chunk = renewals.slice(i, i + chunkSize);
         const placeholders = chunk
-            .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`)
+            .map(() => `(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`)
             .join(', ');
         const params = [];
 
@@ -834,12 +917,13 @@ const replaceRenewals = async (connection, renewalTableName, renewals) => {
                 renewal.data_scadenza,
                 renewal.rinnovo_data,
                 renewal.rinnovo_da,
+                renewal.nuova_emissione_id,
                 renewal.costo_ie,
                 renewal.importo_ie,
                 renewal.fattura_numero,
                 renewal.fattura_tipo_invio,
                 renewal.fattura_tipo_pagamento,
-                renewal.fattura_data_pagamento,
+                renewal.data_riferimento_incasso,
                 renewal.note || null
             );
         });
@@ -879,7 +963,7 @@ const loadDataFromXLS = async (filePath) => {
     }
 
     const masterSheet = sheets[0];
-    const masterRecords = buildMasterRecords(masterSheet.rows);
+    const masterRecords = buildMasterRecords(masterSheet);
 
     if (!Array.isArray(masterRecords) || masterRecords.length === 0) {
         await fs.unlink(absolutePath).catch(() => {});
