@@ -6,7 +6,8 @@
   "scripts": {
     "start": "node src/app.js",
     "dev": "nodemon src/app.js",
-    "db:setup": "node scripts/createTables.js"
+    "db:setup": "node scripts/createTables.js",
+    "db:test": "node scripts/testConnection.js"
   },
   "dependencies": {
     "express": "^4.17.1",
