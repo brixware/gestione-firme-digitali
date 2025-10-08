@@ -246,6 +246,8 @@ const rowToRecord = (row, columns) => {
         }
 
         record[columnName] = value;
+        // alias posizionali sempre presenti, per fallback robusti (es. colonna K -> __col_10)
+        record[`__col_${index}`] = value;
     });
 
     return record;
@@ -675,24 +677,24 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
         nuova_emissione_id: null,
         costo_ie: parseMoney(mapped.costo_ie),
         importo_ie: parseMoney(mapped.importo_ie),
-        fattura_numero: parseGenericValue(mapped.fattura_numero),
+        // Fatturazione N° Documento (colonna N nei fogli 2–4): usa mappatura o fallback posizionale
+        fattura_numero: parseGenericValue(
+            mapped.fattura_numero !== undefined ? mapped.fattura_numero : rawRecord['__col_13']
+        ),
         fattura_tipo_invio: parseGenericValue(mapped.fattura_tipo_invio),
         fattura_tipo_pagamento: null,
         data_riferimento_incasso: null,
         note: parseGenericValue(mapped.note)
     };
 
-    const rinnovoDaRaw = parseGenericValue(mapped.rinnovo_da);
+    // Preferisci il valore mappato per 'Rinnovo DA', altrimenti fallback alla colonna K (indice 10)
+    const rinnovoDaRaw = parseGenericValue(
+        mapped.rinnovo_da !== undefined ? mapped.rinnovo_da : rawRecord['__col_10']
+    );
     if (rinnovoDaRaw) {
-        const match = rinnovoDaRaw.match(/NE-?\s*(\d+)/i);
-        if (match) {
-            const numericPart = match[1].trim();
-            const referenceId = Number.parseInt(numericPart, 10);
-            record.rinnovo_da = numericPart;
-            record.nuova_emissione_id = Number.isNaN(referenceId) ? null : referenceId;
-        } else {
-            record.rinnovo_da = rinnovoDaRaw;
-        }
+        // Richiesta: mettere sempre l'intero valore della colonna K in rinnovo_da
+        record.rinnovo_da = rinnovoDaRaw;
+        record.nuova_emissione_id = null;
     }
 
     const paymentDate = parseDate(mapped.fattura_tipo_pagamento);
