@@ -5,15 +5,198 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Gestione Firme Digitali</title>
     <link rel="stylesheet" href="styles.css">
+    <link rel="icon" href="https://brixware.it/favicon.ico">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <div class="container">
-        <h1>Carica il tuo file XLS</h1>
-        <form id="uploadForm" enctype="multipart/form-data">
-            <input type="file" id="fileInput" name="file" accept=".xls,.xlsx" required>
-            <button type="submit">Carica</button>
-        </form>
-        <div id="message"></div>
+    <div class="layout">
+        <aside class="sidebar">
+            <div class="brand">
+                <a href="https://www.brixware.it" target="_blank" rel="noopener" class="brand-link" title="Brixware">
+                    <img src="logo.png" alt="Brixware" class="brand-logo" onerror="this.style.display='none'" />
+                </a>
+                <span class="brand-name">Gestione Firme</span>
+            </div>
+            <nav class="nav">
+                <a href="#" class="nav-link active" data-view="dashboard-view">Dashboard</a>
+                <a href="#" class="nav-link" data-view="upload-view">Carica XLS</a>
+                <div class="accordion">
+                    <button class="accordion-header" aria-expanded="false" type="button">
+                        <span>Firme Digitali</span>
+                        <span class="chev" aria-hidden="true">▸</span>
+                    </button>
+                    <div class="accordion-panel" hidden>
+                        <a href="#" class="nav-sublink" data-view="signatures-view" data-action="signatures-list">Elenco</a>
+                        <a href="#" class="nav-sublink" data-view="signature-insert-view">Inserisci</a>
+                        <a href="#" class="nav-sublink" data-view="signature-renew-view">Rinnova</a>
+                    </div>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="content">
+            <section id="dashboard-view" class="view active">
+                <h1>Dashboard</h1>
+                <p class="muted">Firme digitali in scadenza nei prossimi giorni</p>
+                <div class="controls">
+                    <div class="left">
+                        <label>Giorni
+                            <select id="exp-days">
+                                <option value="7">7</option>
+                                <option value="15" selected>15</option>
+                                <option value="30">30</option>
+                            </select>
+                        </label>
+                        <label style="margin-left:10px;">Elementi per pagina
+                            <select id="exp-page-size">
+                                <option value="5" selected>5</option>
+                                <option value="10">10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="right">
+                        <button id="exp-export" class="btn" title="Esporta CSV">Esporta CSV</button>
+                        <span id="exp-total" style="margin-left:10px;">Trovate 0 scadenze</span>
+                    </div>
+                </div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Titolare</th>
+                                <th>Email</th>
+                                <th>Recapito</th>
+                                <th>Data Scadenza</th>
+                                <th>Giorni residui</th>
+                                <th>Azioni</th>
+                            </tr>
+                        </thead>
+                        <tbody id="expiring-body"></tbody>
+                    </table>
+                </div>
+                <div class="pager">
+                    <button id="exp-prev" class="btn" disabled>« Precedente</button>
+                    <span id="exp-page-info">Pagina 1 / 1</span>
+                    <button id="exp-next" class="btn" disabled>Successiva »</button>
+                </div>
+
+                <h1 style="margin-top:24px;">Statistiche annuali</h1>
+                <div class="grid-2">
+                    <div class="card">
+                        <h2 class="card-title">Emesse per anno</h2>
+                        <canvas id="yearly-chart" height="160"></canvas>
+                    </div>
+                    <div class="card">
+                        <h2 class="card-title">Rinnovate per anno</h2>
+                        <canvas id="renewals-yearly-chart" height="160"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section id="upload-view" class="view">
+                <h1>Carica il tuo file XLS</h1>
+                <form id="uploadForm" enctype="multipart/form-data">
+                    <input type="file" id="fileInput" name="file" accept=".xls,.xlsx" required>
+                    <button type="submit">Carica</button>
+                </form>
+                <div id="message"></div>
+            </section>
+
+            <section id="signatures-view" class="view">
+                <h1>Firme Digitali</h1>
+                <div class="controls">
+                    <div class="left">
+                        <label>Elementi per pagina
+                            <select id="sig-page-size">
+                                <option value="10">10</option>
+                                <option value="20" selected>20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="right" id="sig-range">Mostrando 0–0 di 0</div>
+                </div>
+                <div class="table-wrap">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th data-sort="id">ID</th>
+                                <th data-sort="titolare">Titolare</th>
+                                <th data-sort="email">Email</th>
+                                <th data-sort="recapito_telefonico">Recapito</th>
+                                <th data-sort="data_emissione">Data Emissione</th>
+                                <th data-sort="costo_ie">Costo (i.e.)</th>
+                                <th data-sort="importo_ie">Importo (i.e.)</th>
+                                <th data-sort="fattura_numero">Fattura N.</th>
+                                <th data-sort="fattura_tipo_invio">Tipo invio</th>
+                                <th>Rinnovi</th>
+                            </tr>
+                            <tr class="filters">
+                                <th><input id="f-id" type="number" min="0" placeholder="ID" /></th>
+                                <th><input id="f-titolare" type="text" placeholder="Titolare" /></th>
+                                <th><input id="f-email" type="text" placeholder="Email" /></th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                                <th></th>
+                                <th><input id="f-fattura" type="text" placeholder="Fattura N." /></th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="sig-body"></tbody>
+                    </table>
+                </div>
+                <div class="pager">
+                    <button id="sig-prev" class="btn" disabled>« Precedente</button>
+                    <span id="sig-page-info">Pagina 1 / 1</span>
+                    <button id="sig-next" class="btn" disabled>Successiva »</button>
+                </div>
+            </section>
+
+            <section id="signature-insert-view" class="view">
+                <h1>Inserisci Firma</h1>
+                <p class="muted">Prossimamente: form per inserire una nuova firma digitale.</p>
+            </section>
+
+            <section id="signature-renew-view" class="view">
+                <h1>Rinnova Firma</h1>
+                <p class="muted">Prossimamente: flusso guidato per il rinnovo.</p>
+            </section>
+        </main>
+    </div>
+    <!-- Modale Rinnovi -->
+    <div id="modal-renewals" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="modal-renewals-title">
+        <div class="modal-backdrop" data-close="true"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2 id="modal-renewals-title">Rinnovi</h2>
+                <button class="modal-close" title="Chiudi" data-close="true">×</button>
+            </div>
+            <div class="modal-body">
+                <div id="renewals-empty" class="muted">Nessun rinnovo disponibile.</div>
+                <div class="table-wrap" id="renewals-table-wrap" style="display:none">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Foglio</th>
+                                <th>Rinnovo Da</th>
+                                <th>Nuova Emissione</th>
+                                <th>Rinnovo Data</th>
+                                <th>Data Scadenza</th>
+                                <th>Fattura N.</th>
+                                <th>Note</th>
+                            </tr>
+                        </thead>
+                        <tbody id="renewals-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
     </div>
     <script src="script.js"></script>
 </body>

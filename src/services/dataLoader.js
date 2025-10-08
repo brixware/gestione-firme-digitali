@@ -356,25 +356,31 @@ const parseDate = (value) => {
             return null;
         }
 
+        // Normalizza separatori e consenti eventuale orario dopo la data
         const normalised = trimmed.replace(/-/g, '/').replace(/\./g, '/');
-        const pattern = /^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/;
-        const match = normalised.match(pattern);
-
-        if (match) {
-            const day = Number.parseInt(match[1], 10);
-            const month = Number.parseInt(match[2], 10) - 1;
-            let year = Number.parseInt(match[3], 10);
-
-            if (year < 100) {
-                year += year >= 50 ? 1900 : 2000;
-            }
-
-            const parsedDate = new Date(year, month, day);
-            if (Number.isNaN(parsedDate.getTime())) {
-                return null;
-            }
-
-            return parsedDate.toISOString().slice(0, 10);
+        // dd/mm/yyyy [time]
+        let m = normalised.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+.*)?$/);
+        if (m) {
+            const day = Number.parseInt(m[1], 10);
+            const month = Number.parseInt(m[2], 10) - 1;
+            let year = Number.parseInt(m[3], 10);
+            if (year < 100) year += year >= 50 ? 1900 : 2000;
+            const d = new Date(year, month, day);
+            return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+        }
+        // yyyy/mm/dd [time]
+        m = normalised.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+.*)?$/);
+        if (m) {
+            const year = Number.parseInt(m[1], 10);
+            const month = Number.parseInt(m[2], 10) - 1;
+            const day = Number.parseInt(m[3], 10);
+            const d = new Date(year, month, day);
+            return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+        }
+        // Tentativo generico
+        const fallback = new Date(trimmed);
+        if (!Number.isNaN(fallback.getTime())) {
+            return fallback.toISOString().slice(0, 10);
         }
     }
 
