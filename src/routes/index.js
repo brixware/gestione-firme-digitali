@@ -4,6 +4,34 @@ const path = require('path');
 const { loadDataFromXLS } = require('../services/dataLoader');
 const db = require('../services/dbConnector');
 
+const sanitizeIdentifier = (value = '', fallback = '') => {
+    const trimmed = String(value || '').trim();
+    const safe = trimmed.replace(/[^a-zA-Z0-9_]/g, '');
+    if (safe.length > 0) return safe;
+    const fallbackTrimmed = String(fallback || '').trim();
+    return fallbackTrimmed.replace(/[^a-zA-Z0-9_]/g, '');
+};
+const normalizeAssetCategory = (value = '') => String(value || '').trim().replace(/\s+/g, '_').toUpperCase();
+const normalizeAssetSubtype = (value = '') => String(value || '').trim().toUpperCase();
+const RAW_ASSET_OPTIONS = {
+    KIT: ['STD', 'TOK', 'AK', 'AK-CNS'],
+    SMART_CARD: ['STD', 'SIM', 'TAV'],
+    LETTORE: ['TAV', 'TOK', 'AK'],
+    CERTIFICATO: ['CNS-L', 'CNS', 'CFD', 'CFD-R']
+};
+const ASSET_OPTIONS = Object.fromEntries(
+    Object.entries(RAW_ASSET_OPTIONS).map(([category, subtypes]) => [
+        normalizeAssetCategory(category),
+        Array.from(new Set(subtypes.map((sub) => normalizeAssetSubtype(sub))))
+    ])
+);
+const isValidAssetCombo = (category, subtype) => {
+    const cat = normalizeAssetCategory(category);
+    const sub = normalizeAssetSubtype(subtype);
+    const allowed = ASSET_OPTIONS[cat];
+    return Array.isArray(allowed) && allowed.includes(sub);
+};
+
 const router = express.Router();
 const uploadDirName = process.env.UPLOAD_DIR || 'uploads';
 const upload = multer({ dest: path.resolve(__dirname, '..', '..', uploadDirName) });
@@ -273,6 +301,39 @@ router.post('/signatures', async (req, res) => {
             data_riferimento_incasso,
             paid ? 1 : 0
         ]);
+
+        if (assetTableName) {
+            const assetInput = Array.isArray(body.assets) ? body.assets : [];
+            const validAssets = [];
+            const seenKeys = new Set();
+            assetInput.forEach((asset) => {
+                if (!asset) return;
+                const category = normalizeAssetCategory(asset.category);
+                const subtype = normalizeAssetSubtype(asset.subtype);
+                if (!isValidAssetCombo(category, subtype)) return;
+                const key = `${category}::${subtype}`;
+                if (seenKeys.has(key)) return;
+                seenKeys.add(key);
+                validAssets.push({ category, subtype });
+            });
+            try {
+                await db.pool.query(`DELETE FROM \`${assetTableName}\` WHERE signature_id = ?`, [id]);
+                if (validAssets.length > 0) {
+                    const placeholders = validAssets.map(() => '(?, ?, ?, ?)').join(', ');
+                    const params = [];
+                    validAssets.forEach(({ category, subtype }) => {
+                        params.push(id, category, subtype, 1);
+                    });
+                    await db.pool.query(
+                        `INSERT INTO \`${assetTableName}\` (signature_id, category, subtype, has_item) VALUES ${placeholders}`,
+                        params
+                    );
+                }
+            } catch (assetError) {
+                console.error('Errore salvataggio asset firma:', assetError);
+            }
+        }
+
         res.status(201).json({ message: 'Firma inserita correttamente.', id });
     } catch (error) {
         if (error && error.code === 'ER_DUP_ENTRY') {
@@ -402,6 +463,8 @@ router.get('/signatures/:id', async (req, res) => {
         }
         const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
         const tableName = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
+        const assetTableEnv = process.env.DB_ASSET_TABLE || `${tableName}_assets`;
+        const assetTableName = sanitizeIdentifier(assetTableEnv, `${tableName}_assets`);
         const [rows] = await db.pool.query(
             `SELECT id, titolare, email, recapito_telefonico, data_emissione, emesso_da, costo_ie, importo_ie, fattura_numero, fattura_tipo_invio
              FROM \`${tableName}\`
@@ -412,7 +475,23 @@ router.get('/signatures/:id', async (req, res) => {
         if (!rows || rows.length === 0) {
             return res.status(404).json({ message: 'Firma non trovata' });
         }
-        res.json({ data: rows[0] });
+        let assets = [];
+        if (assetTableName) {
+            try {
+                const [assetRows] = await db.pool.query(
+                    `SELECT category, subtype, has_item FROM \`${assetTableName}\` WHERE signature_id = ? AND has_item = 1`,
+                    [id]
+                );
+                assets = assetRows.map((row) => ({
+                    category: normalizeAssetCategory(row.category),
+                    subtype: normalizeAssetSubtype(row.subtype),
+                    has_item: row.has_item
+                }));
+            } catch (assetError) {
+                console.error('Errore recupero asset firma:', assetError);
+            }
+        }
+        res.json({ data: { ...rows[0], assets } });
     } catch (error) {
         console.error('Errore get signature:', error);
         res.status(500).json({ message: 'Errore nel recupero della firma.' });

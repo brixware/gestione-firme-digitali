@@ -126,7 +126,7 @@
                                 <option value="100">100</option>
                             </select>
                         </label>
-                        <label style="margin-left:10px;">Firme Digitali
+                        <label style="margin-left:10px;">Emissioni
                             <select id="f-paid">
                                 <option value="">Tutte</option>
                                 <option value="1">Pagate</option>
@@ -152,7 +152,7 @@
                                 <th>Azioni</th>
                             </tr>
                             <tr class="filters">
-                                <th><input id="f-id" type="number" min="0" placeholder="ID" /></th>
+                                <th><input id="f-id" type="string" placeholder="ID" /></th>
                                 <th><input id="f-titolare" type="text" placeholder="Titolare" /></th>
                                 <th><input id="f-email" type="text" placeholder="Email" /></th>
                                 <th></th>
@@ -198,9 +198,13 @@
                     <div class="form-row">
                         <label for="si-id">ID *</label>
                         <div class="row-inline">
-                            <input id="si-id" name="id" type="number" min="1" placeholder="Es. 123" required aria-required="true">
+                            <input id="si-id" name="id" type="number" min="1" placeholder="Auto" required aria-required="true" readonly>
                             <button id="si-nextid" type="button" class="btn" title="Suggerisci prossimo ID">Prossimo ID</button>
                         </div>
+                    </div>
+                    <div class="form-row">
+                        <label for="si-ref-id">Riferimento ID</label>
+                        <input id="si-ref-id" name="reference_id" type="number" readonly placeholder="(vuoto)">
                     </div>
                     <div class="form-row">
                         <label for="si-titolare">Titolare *</label>
@@ -220,7 +224,7 @@
                     </div>
                     <div class="form-row">
                         <label for="si-emesso">Emesso da</label>
-                        <input id="si-emesso" name="emesso_da" type="text">
+                        <input id="si-emesso" name="emesso_da" type="text" value="A.F.">
                     </div>
                     <div class="form-row">
                         <label for="si-fnum">Fattura N.</label>
@@ -229,6 +233,84 @@
                     <div class="form-row">
                         <label for="si-finvio">Tipo invio</label>
                         <input id="si-finvio" name="fattura_tipo_invio" type="text">
+                    </div>
+                    <div class="asset-grid">
+                        <fieldset class="asset-group">
+                            <legend>Kit</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-kit-std" value="STD" data-asset-category="KIT">
+                                    <span>STD</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-kit-tok" value="TOK" data-asset-category="KIT">
+                                    <span>TOK</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-kit-ak" value="AK" data-asset-category="KIT">
+                                    <span>AK</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-kit-akcns" value="AK-CNS" data-asset-category="KIT">
+                                    <span>AK-CNS</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="asset-group">
+                            <legend>Smart Card</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-smart-std" value="STD" data-asset-category="SMART_CARD">
+                                    <span>STD</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-smart-sim" value="SIM" data-asset-category="SMART_CARD">
+                                    <span>SIM</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-smart-tav" value="TAV" data-asset-category="SMART_CARD">
+                                    <span>TAV</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="asset-group">
+                            <legend>Lettore</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-lettore-tav" value="TAV" data-asset-category="LETTORE">
+                                    <span>TAV</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-lettore-tok" value="TOK" data-asset-category="LETTORE">
+                                    <span>TOK</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-lettore-ak" value="AK" data-asset-category="LETTORE">
+                                    <span>AK</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="asset-group">
+                            <legend>Certificato</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-certificato-cnsl" value="CNS-L" data-asset-category="CERTIFICATO">
+                                    <span>CNS-L</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-certificato-cns" value="CNS" data-asset-category="CERTIFICATO">
+                                    <span>CNS</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-certificato-cfd" value="CFD" data-asset-category="CERTIFICATO">
+                                    <span>CFD</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="asset-certificato-cfdr" value="CFD-R" data-asset-category="CERTIFICATO">
+                                    <span>CFD-R</span>
+                                </label>
+                            </div>
+                        </fieldset>
                     </div>
                     <div class="form-row toggle-row">
                         <label for="si-paid" class="toggle-label">Pagato</label>

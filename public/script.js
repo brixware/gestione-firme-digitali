@@ -274,7 +274,20 @@
   const siSuggest = document.getElementById('si-suggest');
   const siLoadId = document.getElementById('si-load-id');
   const siLoadBtn = document.getElementById('si-load-btn');
-  async function fetchNextId() { try { const res = await fetch('/api/signatures/next-id'); if (!res.ok) throw new Error('Errore calcolo prossimo ID'); const data = await res.json(); const input = document.getElementById('si-id'); if (input) input.value = data.nextId; } catch (e) { console.error(e); } }
+  const siIdInput = document.getElementById('si-id');
+  const siEmessoInput = document.getElementById('si-emesso');
+  const siReferenceInput = document.getElementById('si-ref-id');
+  const assetCheckboxes = Array.from(document.querySelectorAll('input[data-asset-category]'));
+  let isEditingExisting = false;
+  async function fetchNextId(force = false) {
+    if (isEditingExisting && !force) return;
+    try {
+      const res = await fetch('/api/signatures/next-id');
+      if (!res.ok) throw new Error('Errore calcolo prossimo ID');
+      const data = await res.json();
+      if (siIdInput) siIdInput.value = data.nextId;
+    } catch (e) { console.error(e); }
+  }
   const getInputEl = (id) => document.getElementById(id);
   const getTrimmedValue = (id) => {
     const el = getInputEl(id);
@@ -298,14 +311,43 @@
     const num = Number(value);
     return Number.isNaN(num) ? undefined : num;
   };
-  function prepareInsertView() { if (siMsg) siMsg.textContent = ''; fetchNextId(); }
-  siNextBtn?.addEventListener('click', () => { fetchNextId(); });
-  siResetBtn?.addEventListener('click', () => {
-    insertForm?.reset();
+  const resetAssetChoices = () => { assetCheckboxes.forEach((cb) => { cb.checked = false; }); };
+  const applyAssetSelection = (assets) => {
+    resetAssetChoices();
+    if (!Array.isArray(assets)) return;
+    assets.forEach((asset) => {
+      if (!asset) return;
+      const category = typeof asset.category === 'string' ? asset.category.trim().replace(/\s+/g, '_').toUpperCase() : '';
+      const subtype = typeof asset.subtype === 'string' ? asset.subtype.trim().toUpperCase() : '';
+      if (!category || !subtype) return;
+      const checkbox = assetCheckboxes.find((cb) => (cb.getAttribute('data-asset-category') || '').trim().replace(/\s+/g, '_').toUpperCase() === category && (cb.value || '').toUpperCase() === subtype);
+      if (checkbox) {
+        const rawValue = asset.has_item ?? asset.value ?? 1;
+        const numeric = Number(rawValue);
+        const isSelected = Number.isNaN(numeric) ? Boolean(rawValue) : numeric !== 0;
+        checkbox.checked = isSelected;
+      }
+    });
+  };
+  const enterNewMode = () => {
+    isEditingExisting = false;
+    if (insertForm) insertForm.reset();
     if (siMsg) siMsg.textContent = '';
-    const paidEl = getInputEl('si-paid');
-    if (paidEl) paidEl.checked = false;
-    fetchNextId();
+    resetAssetChoices();
+    if (siSearch) siSearch.value = '';
+    if (siSuggest) { siSuggest.classList.add('hidden'); siSuggest.innerHTML = ''; }
+    if (siLoadId) siLoadId.value = '';
+    if (siReferenceInput) siReferenceInput.value = '';
+    if (siEmessoInput) siEmessoInput.value = 'A.F.';
+    const paidEl = getInputEl('si-paid'); if (paidEl) paidEl.checked = false;
+    if (siIdInput) { siIdInput.readOnly = true; siIdInput.value = ''; }
+    if (siNextBtn) siNextBtn.disabled = false;
+    fetchNextId(true);
+  };
+  function prepareInsertView() { enterNewMode(); }
+  siNextBtn?.addEventListener('click', () => { if (isEditingExisting) return; fetchNextId(true); });
+  siResetBtn?.addEventListener('click', () => {
+    enterNewMode();
   });
   insertForm?.addEventListener('submit', async (ev) => {
     ev.preventDefault();
@@ -359,16 +401,63 @@
       importo_ie: getOptionalNumber('si-importo'),
       paid: getInputEl('si-paid')?.checked ? 1 : 0,
     };
-    try { const res = await fetch('/api/signatures', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); const out = await res.json().catch(() => ({})); if (!res.ok) throw new Error(out?.message || 'Errore durante salvataggio.'); if (siMsg) siMsg.textContent = `Salvato ID ${out.id}.`; } catch (e) { console.error(e); if (siMsg) siMsg.textContent = e.message || 'Errore.'; }
+    const selectedAssets = [];
+    const seenAssets = new Set();
+    assetCheckboxes.forEach((cb) => {
+      if (!cb) return;
+      const category = (cb.getAttribute('data-asset-category') || '').trim().replace(/\s+/g, '_').toUpperCase();
+      const subtype = (cb.value || '').trim().toUpperCase();
+      if (!category || !subtype) return;
+      const key = `${category}::${subtype}`;
+      if (cb.checked && !seenAssets.has(key)) {
+        seenAssets.add(key);
+        selectedAssets.push({ category, subtype });
+      }
+    });
+    payload.assets = selectedAssets;
+    payload.reference_id = getOptionalNumber('si-ref-id');
+    try {
+      const res = await fetch('/api/signatures', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out?.message || 'Errore durante salvataggio.');
+      enterNewMode();
+      if (siMsg) siMsg.textContent = `Salvato ID ${out.id}.`;
+    } catch (e) { console.error(e); if (siMsg) siMsg.textContent = e.message || 'Errore.'; }
   });
   let siTimer; async function searchSignatures(q) { if (!siSuggest) return; if (!q || q.trim().length < 2) { siSuggest.classList.add('hidden'); siSuggest.innerHTML=''; return; } try { const res = await fetch(`/api/signatures/search?q=${encodeURIComponent(q.trim())}&limit=20`); if (!res.ok) throw new Error('Errore ricerca'); const json = await res.json(); const list = Array.isArray(json.data) ? json.data : []; if (list.length === 0) { siSuggest.classList.add('hidden'); siSuggest.innerHTML=''; return; } siSuggest.classList.remove('hidden'); siSuggest.innerHTML = `<div class="suggest-list">${list.map(r => `<div class="suggest-item" data-id="${r.id}"><strong>${esc(r.titolare ?? '')}</strong> <small>(ID ${r.id})</small><br><span class="muted">${esc(r.email ?? '')}${r.recapito_telefonico ? ' Â· ' + esc(r.recapito_telefonico) : ''}</span></div>`).join('')}</div>`; } catch (e) { console.error(e); } }
   siSearch?.addEventListener('input', () => { clearTimeout(siTimer); siTimer = setTimeout(() => searchSignatures(siSearch.value), 250); });
   siSuggest?.addEventListener('click', async (e) => { const item = e.target.closest('.suggest-item'); if (!item) return; const id = item.getAttribute('data-id'); if (id) { await loadSignatureIntoForm(id); siSuggest.classList.add('hidden'); } });
   document.addEventListener('click', (e) => { if (siSuggest && !siSuggest.contains(e.target) && e.target !== siSearch) { siSuggest.classList.add('hidden'); } });
   siLoadBtn?.addEventListener('click', async () => { const id = siLoadId?.value; if (!id) return; await loadSignatureIntoForm(id); });
-  async function loadSignatureIntoForm(id) { try { const res = await fetch(`/api/signatures/${encodeURIComponent(id)}`); if (!res.ok) throw new Error('Firma non trovata'); const json = await res.json(); const r = json.data || {}; const setVal = (sel, v) => { const el = document.getElementById(sel); if (el) el.value = v ?? ''; }; setVal('si-id', r.id); setVal('si-titolare', r.titolare); setVal('si-email', r.email); setVal('si-recapito', r.recapito_telefonico); setVal('si-emesso', r.emesso_da); setVal('si-fnum', r.fattura_numero); setVal('si-finvio', r.fattura_tipo_invio); setVal('si-costo', (typeof r.costo_ie === 'number' ? r.costo_ie : (r.costo_ie ?? ''))); setVal('si-importo', (typeof r.importo_ie === 'number' ? r.importo_ie : (r.importo_ie ?? ''))); setVal('si-data', r.data_emissione ? String(r.data_emissione).slice(0,10) : ''); const paidEl = document.getElementById('si-paid'); if (paidEl) paidEl.checked = Boolean(r.paid); if (siMsg) siMsg.textContent = `Dati precompilati da ID ${r.id}. Modifica se necessario e salva.`; } catch (e) { console.error(e); if (siMsg) siMsg.textContent = e.message || 'Errore caricamento firma.'; } }
+  async function loadSignatureIntoForm(id) {
+    try {
+      const res = await fetch(`/api/signatures/${encodeURIComponent(id)}`);
+      if (!res.ok) throw new Error('Firma non trovata');
+      const json = await res.json();
+      const r = json.data || {};
+      const setVal = (sel, v) => { const el = document.getElementById(sel); if (el) el.value = v ?? ''; };
+      isEditingExisting = true;
+      if (siNextBtn) siNextBtn.disabled = true;
+      if (siIdInput) { siIdInput.readOnly = true; }
+      setVal('si-titolare', r.titolare);
+      setVal('si-email', r.email);
+      setVal('si-recapito', r.recapito_telefonico);
+      if (siReferenceInput) siReferenceInput.value = r.id ?? '';
+      setVal('si-emesso', r.emesso_da ?? 'A.F.');
+      setVal('si-fnum', r.fattura_numero);
+      setVal('si-finvio', r.fattura_tipo_invio);
+      setVal('si-costo', (typeof r.costo_ie === 'number' ? r.costo_ie : (r.costo_ie ?? '')));
+      setVal('si-importo', (typeof r.importo_ie === 'number' ? r.importo_ie : (r.importo_ie ?? '')));
+      setVal('si-data', r.data_emissione ? String(r.data_emissione).slice(0,10) : '');
+      applyAssetSelection(Array.isArray(r.assets) ? r.assets : []);
+      const paidEl = document.getElementById('si-paid'); if (paidEl) paidEl.checked = Boolean(r.paid);
+      if (siLoadId) siLoadId.value = r.id ?? '';
+      if (siMsg) siMsg.textContent = `Dati precompilati da ID ${r.id}. Modifica se necessario e salva.`;
+    } catch (e) { console.error(e); if (siMsg) siMsg.textContent = e.message || 'Errore caricamento firma.'; }
+  }
 
   // Initial Dashboard
+  if (insertForm) enterNewMode();
   const initialDays = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15;
   loadExpiring(initialDays, 1);
   
