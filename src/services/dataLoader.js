@@ -4,6 +4,7 @@ const xlsx = require('xlsx');
 const dbConnector = require('./dbConnector');
 const { parseWorkbook } = require('./xlsParser');
 const { isEmpty } = require('../utils/helpers');
+const { error, warn, info, debug, verbose } = require('../utils/logger');
 
 const XLS_START_ROW = parseInt(process.env.XLS_START_ROW || '10', 10);
 const XLS_END_ROW = parseInt(process.env.XLS_END_ROW || '2247', 10);
@@ -34,21 +35,29 @@ const DOCUMENT_COLUMN_MAPPING = {
     'Documenti DI': { category: 'DOCUMENTO', subtype: 'DI' }
 };
 
-const ASSET_COLUMN_MAPPING = {
-    'KIT STD': { category: 'KIT', subtype: 'STD' },
-    'KIT TOK': { category: 'KIT', subtype: 'TOK' },
-    'KIT AK': { category: 'KIT', subtype: 'AK' },
-    'KIT AK-CNS': { category: 'KIT', subtype: 'AK-CNS' },
-    'SMART CARD STD': { category: 'SMART_CARD', subtype: 'STD' },
-    'SMART CARD SIM': { category: 'SMART_CARD', subtype: 'SIM' },
-    'SMART CARD TAV': { category: 'SMART_CARD', subtype: 'TAV' },
-    'LETTORE TOK': { category: 'LETTORE', subtype: 'TOK' },
-    'LETTORE AK': { category: 'LETTORE', subtype: 'AK' },
-    'CERTIFICATO CNS-L': { category: 'CERTIFICATO', subtype: 'CNS-L' },
-    'CERTIFICATO CNS': { category: 'CERTIFICATO', subtype: 'CNS' },
-    'CERTIFICATO CFD': { category: 'CERTIFICATO', subtype: 'CFD' },
-    'CERTIFICATO CFD-R': { category: 'CERTIFICATO', subtype: 'CFD-R' }
+const ASSET_CATEGORIES = {
+    'KIT': ['STD', 'TOK', 'AK', 'AK-CNS'],
+    'SMART CARD': ['STD', 'SIM', 'TAV'],
+    'LETTORE': ['TOK', 'AK'],
+    'CERTIFICATO': ['CNS-L', 'CNS', 'CFD', 'CFD-R']
 };
+
+const ASSET_COLUMN_MAPPING = {};
+Object.entries(ASSET_CATEGORIES).forEach(([category, subtypes]) => {
+    subtypes.forEach(subtype => {
+        // Mapping per il nome completo (retrocompatibilità)
+        const fullName = `${category} ${subtype}`;
+        ASSET_COLUMN_MAPPING[fullName] = {
+            category: category.replace(/\s+/g, '_'),
+            subtype: subtype
+        };
+        // Mapping per il solo subtipo
+        ASSET_COLUMN_MAPPING[subtype] = {
+            category: category.replace(/\s+/g, '_'),
+            subtype: subtype
+        };
+    });
+});
 
 const CONTACT_COLUMN_MAPPING = {
     'N°': 'id',
@@ -62,15 +71,17 @@ const RENEWAL_COLUMN_MAPPING = {
     Titolare: 'titolare',
     Email: 'email',
     'Recapito Telefonico': 'recapito_telefonico',
-    'CERTIFICATO CNS-L': 'certificato_cns_l',
-    'CERTIFICATO CNS': 'certificato_cns',
-    'CERTIFICATO CFD': 'certificato_cfd',
-    'CERTIFICATO CFD-R': 'certificato_cfd_r',
+    'CNS-L': 'certificato_cns_l',
+    'CNS': 'certificato_cns',
+    'CFD': 'certificato_cfd',
+    'CFD-R': 'certificato_cfd_r',
     'Data Emissione': 'data_emissione',
-    Emissione: 'data_emissione',
-    'Data Scadenza': 'data_scadenza',
-    Scadenza: 'data_scadenza',
+    'Data': 'data_emissione',
+    'Data Rinnovo': 'data_emissione',
+    'Scadenza': 'data_scadenza',
     'Rinnovo Data': 'rinnovo_data',
+    'Rinnovo 2 Data': 'rinnovo_data',
+    'Rinnovo 3 Data': 'rinnovo_data',
     'Rinnovo DA': 'rinnovo_da',
     'Costo (i.e.)': 'costo_ie',
     'Fatturazione Costo (i.e.)': 'costo_ie',
@@ -104,6 +115,7 @@ const TRUTHY_MARKERS = new Set([
     'true',
     '1'
 ]);
+const FALSY_MARKERS = new Set(['', '-', 'no', 'n', 'false', 'f', '0', 'off', 'null', 'none', 'undefined']);
 
 const sanitizeTableName = (name = '', fallback) => {
     const trimmed = String(name || '').trim();
@@ -209,10 +221,13 @@ const buildColumnNames = (headerRows) => {
         return [];
     }
 
+    console.log('Header Rows:', JSON.stringify(headerRows));
+
     const maxLength = headerRows.reduce(
         (max, row) => Math.max(max, Array.isArray(row) ? row.length : 0),
         0
     );
+    console.log('Max Length:', maxLength);
     const columns = [];
 
     for (let i = 0; i < maxLength; i += 1) {
@@ -222,11 +237,22 @@ const buildColumnNames = (headerRows) => {
 
         if (parts.length === 0) {
             columns.push(`column_${i}`);
+            console.log(`Column ${i}: Using default name 'column_${i}'`);
             continue;
         }
 
-        const uniqueParts = parts.filter((value, index) => parts.indexOf(value) === index);
-        columns.push(uniqueParts.join(' ').trim());
+        // Se abbiamo un nome di categoria nella prima riga e un sottotipo nella seconda
+        if (parts.length === 2 && 
+            Object.keys(ASSET_CATEGORIES).includes(parts[0]) && 
+            ASSET_CATEGORIES[parts[0]].includes(parts[1])) {
+            columns.push(parts[1]); // Usa solo il sottotipo come nome della colonna
+            console.log(`Column ${i}: '${parts[1]}' (from category ${parts[0]})`);
+        } else {
+            const uniqueParts = parts.filter((value, index) => parts.indexOf(value) === index);
+            const columnName = uniqueParts.join(' ').trim();
+            columns.push(columnName);
+            console.log(`Column ${i}: '${columnName}'`);
+        }
     }
 
     return columns;
@@ -283,7 +309,20 @@ const prepareSheetRows = (rows) => {
     const columns = buildColumnNames(headerRows);
 
     const dataRows = rows
-        .map((row, index) => ({ row, excelRowNumber: index + 1 }))
+        .map((row, index) => {
+            // Log per la riga che contiene ID 1000
+            if (row && row.length > 0 && (row[0] === 1000 || String(row[0]).includes('1000'))) {
+                console.log('[ID 1000] Raw Excel Row:', JSON.stringify(row));
+                console.log('[ID 1000] Excel Row Number:', index + 1);
+                // Log dettagliato delle colonne degli asset
+                columns.forEach((col, idx) => {
+                    if (col.includes('SMART_CARD') || col.includes('CERTIFICATO') || col.includes('KIT')) {
+                        console.log(`[ID 1000] Column ${col}:`, JSON.stringify(row[idx]));
+                    }
+                });
+            }
+            return { row, excelRowNumber: index + 1 };
+        })
         .filter(({ excelRowNumber }) => excelRowNumber >= startRow && excelRowNumber <= endRow)
         .filter(({ row }) => rowHasValues(row));
 
@@ -302,6 +341,11 @@ const parseBoolean = (value) => {
     if (typeof value === 'number') {
         return value !== 0;
     }
+    
+    // Gestione speciale per il carattere quadrato pieno
+    if (typeof value === 'string' && value.includes('■')) {
+        return true;
+    }
 
     const trimmed = standardiseKey(String(value)).toLowerCase();
 
@@ -309,8 +353,13 @@ const parseBoolean = (value) => {
         return true;
     }
 
-    if (trimmed === '' || trimmed === '-' || trimmed === 'no' || trimmed === '0') {
+    if (FALSY_MARKERS.has(trimmed)) {
         return false;
+    }
+
+    const numeric = Number(trimmed);
+    if (!Number.isNaN(numeric)) {
+        return numeric !== 0;
     }
 
     return false;
@@ -341,49 +390,149 @@ const parseMoney = (value) => {
 };
 
 const parseDate = (value) => {
+    debug('Parsing date value:', { value, type: typeof value });
+
     if (value === null || value === undefined || value === '' || value === '-') {
+        debug('Date value is null/empty');
         return null;
     }
 
+    // Se è già un oggetto Date
+    if (value instanceof Date) {
+        debug('Value is already a Date object');
+        return value.toISOString().slice(0, 10);
+    }
+
+    // Se è una stringa ISO o timestamp
+    if (typeof value === 'string' && value.includes('T')) {
+        debug('Value is an ISO date string');
+        const date = new Date(value);
+        if (!isNaN(date.getTime())) {
+            return date.toISOString().slice(0, 10);
+        }
+    }
+
+    // Se è una data Excel (numero di giorni dal 1900)
     if (typeof value === 'number') {
+        debug('Parsing Excel date number:', value);
+        // Excel usa 1900 come anno base e conta i giorni da 1/1/1900
+        // 25569 è il numero di giorni tra 1/1/1900 e 1/1/1970 (epoch Unix)
         const excelEpoch = new Date(Math.round((value - 25569) * 86400 * 1000));
-        return Number.isNaN(excelEpoch.getTime()) ? null : excelEpoch.toISOString().slice(0, 10);
+        const result = Number.isNaN(excelEpoch.getTime()) ? null : excelEpoch.toISOString().slice(0, 10);
+        debug('Excel date result:', result);
+        return result;
     }
 
     if (typeof value === 'string') {
         const trimmed = value.trim();
+        debug('Parsing string date:', trimmed);
+        
         if (trimmed === '' || trimmed === '-') {
+            debug('String date is empty/dash');
             return null;
         }
 
-        // Normalizza separatori e consenti eventuale orario dopo la data
-        const normalised = trimmed.replace(/-/g, '/').replace(/\./g, '/');
-        // dd/mm/yyyy [time]
-        let m = normalised.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})(?:\s+.*)?$/);
+        // Prova a parsare come data Excel serializzata come stringa
+        const numericValue = parseFloat(trimmed);
+        if (!isNaN(numericValue)) {
+            debug('String appears to be numeric, trying as Excel date:', numericValue);
+            const excelDate = parseDate(numericValue);
+            if (excelDate) {
+                debug('Successfully parsed as Excel date:', excelDate);
+                return excelDate;
+            }
+        }
+
+        // Normalizza separatori e rimuovi eventuali parti di ora
+        let normalised = trimmed
+            .replace(/-/g, '/')
+            .replace(/\./g, '/')
+            .split(/[T\s]/)[0];  // Prendi solo la parte della data
+        
+        debug('Normalized date string:', normalised);
+
+        // dd/mm/yyyy
+        let m = normalised.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
         if (m) {
+            debug('Matches dd/mm/yyyy pattern');
             const day = Number.parseInt(m[1], 10);
             const month = Number.parseInt(m[2], 10) - 1;
             let year = Number.parseInt(m[3], 10);
             if (year < 100) year += year >= 50 ? 1900 : 2000;
             const d = new Date(year, month, day);
-            return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+            if (!Number.isNaN(d.getTime())) {
+                const result = d.toISOString().slice(0, 10);
+                debug('Successfully parsed dd/mm/yyyy:', result);
+                return result;
+            }
         }
-        // yyyy/mm/dd [time]
-        m = normalised.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})(?:\s+.*)?$/);
+
+        // yyyy/mm/dd
+        m = normalised.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
         if (m) {
+            debug('Matches yyyy/mm/dd pattern');
             const year = Number.parseInt(m[1], 10);
             const month = Number.parseInt(m[2], 10) - 1;
             const day = Number.parseInt(m[3], 10);
             const d = new Date(year, month, day);
-            return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10);
+            if (!Number.isNaN(d.getTime())) {
+                const result = d.toISOString().slice(0, 10);
+                debug('Successfully parsed yyyy/mm/dd:', result);
+                return result;
+            }
         }
-        // Tentativo generico
+
+        // Prova altri formati comuni italiani
+        const formats = [
+            /^(\d{1,2})[-\/\s](\d{1,2})[-\/\s](\d{2,4})$/,  // dd-mm-yyyy, dd mm yyyy
+            /^(\d{1,2})[-\/\s](\d{1,2})[-\/\s](\d{2})$/,    // dd-mm-yy
+            /^(\d{4})[-\/\s](\d{1,2})[-\/\s](\d{1,2})$/     // yyyy-mm-dd, yyyy mm dd
+        ];
+
+        for (const format of formats) {
+            m = normalised.match(format);
+            if (m) {
+                debug('Matches alternative format:', format);
+                let [_, part1, part2, part3] = m;
+                let year = parseInt(part3, 10);
+                let month = parseInt(part2, 10);
+                let day = parseInt(part1, 10);
+
+                // Se il primo numero è l'anno (4 cifre)
+                if (part1.length === 4) {
+                    year = parseInt(part1, 10);
+                    month = parseInt(part2, 10);
+                    day = parseInt(part3, 10);
+                }
+
+                // Gestione anno a 2 cifre
+                if (year < 100) {
+                    year += year >= 50 ? 1900 : 2000;
+                }
+
+                // Correggi il mese (0-based)
+                month -= 1;
+
+                const d = new Date(year, month, day);
+                if (!Number.isNaN(d.getTime())) {
+                    const result = d.toISOString().slice(0, 10);
+                    debug('Successfully parsed alternative format:', result);
+                    return result;
+                }
+            }
+        }
+
+        // Ultimo tentativo con il parser nativo
+        debug('Trying native Date parser');
         const fallback = new Date(trimmed);
         if (!Number.isNaN(fallback.getTime())) {
-            return fallback.toISOString().slice(0, 10);
+            const result = fallback.toISOString().slice(0, 10);
+            debug('Successfully parsed with native parser:', result);
+            return result;
         }
     }
 
+    debug('Failed to parse date');
     return null;
 };
 
@@ -483,18 +632,44 @@ const normaliseMasterRecord = (rawRecord, meta = {}) => {
         ])
     );
 
+    // Log del record grezzo per ID 1000
+    if (baseRaw.id === 1000 || normaliseId(rawRecord['N°']) === 1000) {
+        console.log('[ID 1000] Complete raw record:', JSON.stringify(rawRecord, null, 2));
+    }
+
     Object.entries(rawRecord).forEach(([rawKey, rawValue]) => {
         const mapped = mapColumnKey(rawKey, COLUMN_LOOKUP);
         if (!mapped) {
+            if (baseRaw.id === 1000 || normaliseId(rawRecord['N°']) === 1000) {
+                console.log(`[ID 1000] Column not mapped: ${rawKey}`);
+            }
             return;
         }
 
         if (mapped.type === 'asset') {
-            const key = `${mapped.value.category}::${mapped.value.subtype}`;
-            const entry = assetMap.get(key);
-            if (entry) {
-                entry.value = parseBoolean(rawValue) ? 1 : 0;
-                entry.present = true;
+            // Solo per ID 1000
+            if (baseRaw.id === 1000 || normaliseId(rawRecord['N°']) === 1000) {
+                const key = `${mapped.value.category}::${mapped.value.subtype}`;
+                console.log(`[ID 1000] Processing asset - Key: ${key}`);
+                console.log(`[ID 1000] Column name: ${rawKey}`);
+                console.log(`[ID 1000] Raw Value:`, JSON.stringify(rawValue));
+                console.log(`[ID 1000] Raw Value Type:`, typeof rawValue);
+                
+                const entry = assetMap.get(key);
+                if (entry) {
+                    const boolValue = parseBoolean(rawValue);
+                    console.log(`[ID 1000] Asset ${key} - Final boolean value:`, boolValue);
+                    console.log('------------------------');
+                    entry.value = boolValue;
+                    entry.present = true;
+                }
+            } else {
+                const key = `${mapped.value.category}::${mapped.value.subtype}`;
+                const entry = assetMap.get(key);
+                if (entry) {
+                    entry.value = parseBoolean(rawValue);
+                    entry.present = true;
+                }
             }
             return;
         }
@@ -503,7 +678,7 @@ const normaliseMasterRecord = (rawRecord, meta = {}) => {
             const key = `${mapped.value.category}::${mapped.value.subtype}`;
             const entry = documentMap.get(key);
             if (entry) {
-                entry.value = parseBoolean(rawValue) ? 1 : 0;
+                entry.value = parseBoolean(rawValue);
                 entry.present = true;
             }
             return;
@@ -634,6 +809,17 @@ const normaliseContactRecord = (rawRecord) => {
 
 const normaliseRenewalRecord = (rawRecord, sheetName) => {
     const mapped = {};
+    
+    // Log solo per il record con ID 2
+    if (rawRecord['N°'] === '2') {
+        debug('Processing renewal record ID 2:', {
+            date_values: {
+                emissione: rawRecord['Data'] || rawRecord['Data Emissione'] || rawRecord['Data Rinnovo'],
+                scadenza: rawRecord['Scadenza'] || rawRecord['Data Scadenza'],
+                rinnovo: rawRecord['Rinnovo Data']
+            }
+        });
+    }
 
     Object.entries(rawRecord).forEach(([rawKey, rawValue]) => {
         const target = mapColumnKey(rawKey, RENEWAL_LOOKUP);
@@ -667,29 +853,157 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
         return null;
     }
 
+    // Per i fogli di rinnovo (2, 3, 4) useremo un formato diverso
+    const isRenewalSheet = sheetName && (sheetName.includes('Rinnovi') || sheetName.includes('Rinnovo'));
+
+    // Log essenziale solo per il record con ID 2
+    if (id === '2' || id === 2) {
+        info('Processing record ID 2:', {
+            dates: {
+                emissione: rawRecord['Data'] || rawRecord['Data Emissione'] || rawRecord['Data Rinnovo'],
+                scadenza: rawRecord['Scadenza'] || rawRecord['Data Scadenza'],
+                rinnovo: rawRecord['Rinnovo Data']
+            }
+        });
+    }
+    
+    // Log dei dati grezzi per debug
+    debug('Dati grezzi del record:', {
+        id,
+        certificati: {
+            'CNS-L': rawRecord['CNS-L'],
+            'CNS': rawRecord['CNS'],
+            'CFD': rawRecord['CFD'],
+            'CFD-R': rawRecord['CFD-R'],
+            'CERTIFICATO CNS-L': rawRecord['CERTIFICATO CNS-L'],
+            'CERTIFICATO CNS': rawRecord['CERTIFICATO CNS'],
+            'CERTIFICATO CFD': rawRecord['CERTIFICATO CFD'],
+            'CERTIFICATO CFD-R': rawRecord['CERTIFICATO CFD-R']
+        },
+        date: {
+            'Data Emissione': mapped.data_emissione,
+            'Data Scadenza': mapped.data_scadenza,
+            'Rinnovo Data': mapped.rinnovo_data,
+            'Colonna 8': rawRecord[7],
+            'Colonna 9': rawRecord[8],
+            'Colonna 10': rawRecord[9]
+        }
+    });
+
     const record = {
         signature_id: id,
         sheet_name: sheetName ? sheetName.trim() : '',
         email: parseGenericValue(mapped.email),
         recapito_telefonico: parseGenericValue(mapped.recapito_telefonico),
-        certificato_cns_l: parseBoolean(mapped.certificato_cns_l) ? 1 : 0,
-        certificato_cns: parseBoolean(mapped.certificato_cns) ? 1 : 0,
-        certificato_cfd: parseBoolean(mapped.certificato_cfd) ? 1 : 0,
-        certificato_cfd_r: parseBoolean(mapped.certificato_cfd_r) ? 1 : 0,
-        data_emissione: parseDate(mapped.data_emissione),
-        data_scadenza: parseDate(mapped.data_scadenza),
-        rinnovo_data: parseDate(mapped.rinnovo_data),
-        rinnovo_da: null,
-        nuova_emissione_id: null,
+        
+        // Gestione certificati migliorata
+        certificato_cns_l: parseBoolean(rawRecord['CNS-L'] || rawRecord['CERTIFICATO CNS-L']) ? 1 : 0,
+        certificato_cns: parseBoolean(rawRecord['CNS'] || rawRecord['CERTIFICATO CNS']) ? 1 : 0,
+        certificato_cfd: parseBoolean(rawRecord['CFD'] || rawRecord['CERTIFICATO CFD']) ? 1 : 0,
+        certificato_cfd_r: parseBoolean(rawRecord['CFD-R'] || rawRecord['CERTIFICATO CFD-R']) ? 1 : 0,
+
+        // Gestione date con logging dettagliato
+        data_emissione: (() => {
+            debug('Tentativo parsing data_emissione:', {
+                mapped: mapped.data_emissione,
+                'Data Emissione': rawRecord['Data Emissione'],
+                'Data': rawRecord['Data'],
+                'Data Rinnovo': rawRecord['Data Rinnovo'],
+                'Colonna 7': rawRecord[7]
+            });
+            const result = parseDate(mapped.data_emissione) || 
+                          parseDate(rawRecord['Data Emissione']) || 
+                          parseDate(rawRecord['Data']) || 
+                          parseDate(rawRecord['Data Rinnovo']) ||
+                          parseDate(rawRecord[7]);
+            debug('Risultato parsing data_emissione:', result);
+            return result;
+        })(),
+                       
+        data_scadenza: (() => {
+            debug('Tentativo parsing data_scadenza:', {
+                mapped: mapped.data_scadenza,
+                'Scadenza': rawRecord['Scadenza'],
+                'Data Scadenza': rawRecord['Data Scadenza'],
+                'Colonna 8': rawRecord[8]
+            });
+            const result = parseDate(mapped.data_scadenza) || 
+                          parseDate(rawRecord['Scadenza']) || 
+                          parseDate(rawRecord['Data Scadenza']) ||
+                          parseDate(rawRecord[8]);
+            debug('Risultato parsing data_scadenza:', result);
+            return result;
+        })(),
+                      
+        rinnovo_data: (() => {
+            const rinnovoValues = {
+                mapped: mapped.rinnovo_data,
+                'Rinnovo Data': rawRecord['Rinnovo Data'],
+                'Rinnovo 2 Data': rawRecord['Rinnovo 2 Data'],
+                'Rinnovo 3 Data': rawRecord['Rinnovo 3 Data'],
+                'Colonna 9': rawRecord[9],
+                'Raw Rinnovo': rawRecord.rinnovo_data
+            };
+            debug('Tentativo parsing rinnovo_data:', rinnovoValues);
+            debug('Tipi dei valori rinnovo_data:', Object.fromEntries(
+                Object.entries(rinnovoValues).map(([k, v]) => [k, typeof v])
+            ));
+            
+            let rinnovo = null;
+            
+            // Prova prima i valori diretti
+            ['Rinnovo Data', 'Rinnovo 2 Data', 'Rinnovo 3 Data'].forEach(key => {
+                if (!rinnovo && rawRecord[key]) {
+                    const attempt = parseDate(rawRecord[key]);
+                    if (attempt) {
+                        debug(`Data di rinnovo trovata in ${key}:`, attempt);
+                        rinnovo = attempt;
+                    }
+                }
+            });
+            
+            // Se non trovato, prova i valori mappati
+            if (!rinnovo) {
+                rinnovo = parseDate(mapped.rinnovo_data) ||
+                         parseDate(rawRecord[9]);
+            }
+            
+            debug('Risultato finale rinnovo_data:', rinnovo);
+            return rinnovo;
+        })(),
+
+        // Altri campi
+        rinnovo_da: (() => {
+            const rawValue = parseGenericValue(mapped.rinnovo_da) || parseGenericValue(rawRecord['DA']) || null;
+            if (!rawValue) return null;
+
+            debug('Valore rinnovo_da:', rawValue);
+            return rawValue;
+        })(),
+
+        nuova_emissione_id: (() => {
+            const rawValue = parseGenericValue(mapped.rinnovo_da) || parseGenericValue(rawRecord['DA']) || null;
+            if (!rawValue) return null;
+
+            debug('Controllo nuova_emissione_id in:', rawValue);
+            const match = String(rawValue).match(/^NE-(\d+)$/);
+            if (match) {
+                const id = match[1];
+                debug('Trovato nuova_emissione_id:', id);
+                return id;
+            }
+            return null;
+        })(),
+        
+        // Campi finanziari
         costo_ie: parseMoney(mapped.costo_ie),
         importo_ie: parseMoney(mapped.importo_ie),
-        // Fatturazione N° Documento (colonna N nei fogli 2–4): usa mappatura o fallback posizionale
-        fattura_numero: parseGenericValue(
-            mapped.fattura_numero !== undefined ? mapped.fattura_numero : rawRecord['__col_13']
-        ),
-        fattura_tipo_invio: parseGenericValue(mapped.fattura_tipo_invio),
-        fattura_tipo_pagamento: null,
+        fattura_numero: parseGenericValue(mapped.fattura_numero) || parseGenericValue(rawRecord['N° Documento']),
+        fattura_tipo_invio: parseGenericValue(mapped.fattura_tipo_invio) || parseGenericValue(rawRecord['Tipo Invio']),
+        fattura_tipo_pagamento: parseGenericValue(mapped.fattura_tipo_pagamento) || parseGenericValue(rawRecord['Tipo Pag.']),
         data_riferimento_incasso: null,
+        
+        // Note
         note: parseGenericValue(mapped.note)
     };
 
@@ -759,6 +1073,39 @@ const buildRenewalRecords = (rows, sheetName) => {
         .filter((record) => record !== null);
 };
 
+const MAX_RETRIES = 3;
+const BATCH_SIZE = 25; // Ridotto la dimensione del batch per diminuire la probabilità di timeout
+const RETRY_DELAY = 2000; // Aumentato a 2 secondi
+const MAX_RETRY_DELAY = 10000; // Massimo 10 secondi di attesa
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+const executeWithRetry = async (operation, retries = MAX_RETRIES) => {
+    for (let i = 0; i < retries; i++) {
+        try {
+            return await operation();
+        } catch (error) {
+            const isRetryable = [
+                'ER_LOCK_WAIT_TIMEOUT',
+                'ER_LOCK_DEADLOCK',
+                'ER_QUERY_INTERRUPTED'
+            ].includes(error.code);
+
+            if (isRetryable && i < retries - 1) {
+                // Backoff esponenziale con jitter e limite massimo
+                const baseDelay = Math.min(RETRY_DELAY * Math.pow(2, i), MAX_RETRY_DELAY);
+                const jitter = Math.random() * 1000; // Aggiungi fino a 1 secondo di randomicità
+                const delay = baseDelay + jitter;
+                
+                warn(`Tentativo ${i + 1}/${retries} fallito: ${error.message}. Riprovo tra ${Math.round(delay/1000)} secondi...`);
+                await sleep(delay);
+                continue;
+            }
+            throw error;
+        }
+    }
+};
+
 const loadDataToDatabase = async (
     connection,
     records,
@@ -767,7 +1114,7 @@ const loadDataToDatabase = async (
     documentTableName
 ) => {
     if (!Array.isArray(records) || records.length === 0) {
-        console.log('Nessun dato da importare nel database.');
+        debug('Nessun dato da importare nel database.');
         return {
             base: 0,
             assets: 0,
@@ -779,44 +1126,69 @@ const loadDataToDatabase = async (
     let assetsInserted = 0;
     let documentsInserted = 0;
 
-    for (const record of records) {
-        const { base, assets, documents } = record;
+    // Aumenta il timeout della sessione
+    await connection.query('SET SESSION wait_timeout = 300');
+    
+    // Processa i record in batch
+    info(`Inizio importazione di ${records.length} record in batch da ${BATCH_SIZE}`);
+    for (let i = 0; i < records.length; i += BATCH_SIZE) {
+        const batch = records.slice(i, i + BATCH_SIZE);
+        
+        try {
+            await connection.beginTransaction();
+            
+            for (const record of batch) {
+                const { base, assets, documents } = record;
 
-        await connection.query(`REPLACE INTO \`${baseTableName}\` SET ?`, base);
-        baseInserted += 1;
+                // Inserimento del record base con retry
+                await executeWithRetry(async () => {
+                    await connection.query(`REPLACE INTO \`${baseTableName}\` SET ?`, base);
+                });
+                baseInserted += 1;
 
-        await connection.query(`DELETE FROM \`${assetTableName}\` WHERE signature_id = ?`, [
-            base.id
-        ]);
+                // Eliminazione e reinserimento degli asset con retry
+                await executeWithRetry(async () => {
+                    await connection.query(`DELETE FROM \`${assetTableName}\` WHERE signature_id = ?`, [base.id]);
 
-        if (Array.isArray(assets) && assets.length > 0) {
-            const insertValues = assets.map(() => '(?, ?, ?, ?)').join(', ');
-            const params = [];
+                    if (Array.isArray(assets) && assets.length > 0) {
+                        const insertValues = assets.map(() => '(?, ?, ?, ?)').join(', ');
+                        const params = [];
 
-            assets.forEach((asset) => {
-                params.push(base.id, asset.category, asset.subtype, asset.value ? 1 : 0);
-            });
+                        assets.forEach((asset) => {
+                            params.push(base.id, asset.category, asset.subtype, asset.value ? 1 : 0);
+                        });
 
-            const insertSql = `INSERT INTO \`${assetTableName}\` (signature_id, category, subtype, has_item) VALUES ${insertValues}`;
-            await connection.query(insertSql, params);
-            assetsInserted += assets.length;
-        }
+                        const insertSql = `INSERT INTO \`${assetTableName}\` (signature_id, category, subtype, has_item) VALUES ${insertValues}`;
+                        await connection.query(insertSql, params);
+                        assetsInserted += assets.length;
+                    }
+                });
 
-        await connection.query(`DELETE FROM \`${documentTableName}\` WHERE signature_id = ?`, [
-            base.id
-        ]);
+                // Eliminazione e reinserimento dei documenti con retry
+                await executeWithRetry(async () => {
+                    await connection.query(`DELETE FROM \`${documentTableName}\` WHERE signature_id = ?`, [base.id]);
 
-        if (Array.isArray(documents) && documents.length > 0) {
-            const insertValues = documents.map(() => '(?, ?, ?, ?)').join(', ');
-            const params = [];
+                    if (Array.isArray(documents) && documents.length > 0) {
+                        const insertValues = documents.map(() => '(?, ?, ?, ?)').join(', ');
+                        const params = [];
 
-            documents.forEach((document) => {
-                params.push(base.id, document.category, document.subtype, document.value ? 1 : 0);
-            });
+                        documents.forEach((document) => {
+                            params.push(base.id, document.category, document.subtype, document.value ? 1 : 0);
+                        });
 
-            const insertSql = `INSERT INTO \`${documentTableName}\` (signature_id, category, subtype, has_item) VALUES ${insertValues}`;
-            await connection.query(insertSql, params);
-            documentsInserted += documents.length;
+                        const insertSql = `INSERT INTO \`${documentTableName}\` (signature_id, category, subtype, has_item) VALUES ${insertValues}`;
+                        await connection.query(insertSql, params);
+                        documentsInserted += documents.length;
+                    }
+                });
+    }
+
+            await connection.commit();
+            debug(`Batch completato con successo: ${batch.length} record`);
+        } catch (error) {
+            await connection.rollback();
+            error.message = `Errore durante il processamento del batch: ${error.message}`;
+            throw error;
         }
     }
 
@@ -1039,5 +1411,6 @@ const loadDataFromXLS = async (filePath) => {
 
 module.exports = {
     loadDataFromXLS,
-    loadDataToDatabase
+    loadDataToDatabase,
+    normaliseMasterRecord
 };

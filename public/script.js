@@ -1,4 +1,4 @@
-﻿document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
   // Utils
   const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
   const fmt = {
@@ -30,6 +30,9 @@
     if (id === 'signatures-view' || id === 'signature-insert-view' || id === 'signature-renew-view') {
       if (accHeader && accPanel) { accHeader.setAttribute('aria-expanded', 'true'); accPanel.hidden = false; }
     }
+    if (id === 'signature-insert-view') {
+      prepareInsertView();
+    }
     if (id === 'dashboard-view') {
       const d = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15;
       loadExpiring(d, 1);
@@ -45,7 +48,6 @@
     if (!id) return;
     showView(id);
     if (id === 'signatures-view') loadSignatures(1);
-    if (id === 'signature-insert-view') prepareInsertView();
   }));
   accHeader?.addEventListener('click', () => {
     const expanded = accHeader.getAttribute('aria-expanded') === 'true';
@@ -79,7 +81,7 @@
       }
       setMessage(`${result?.message || 'File caricato con successo.'}${details}`, 'success');
       form.reset(); showView('dashboard-view');
-    } catch (error) { console.error('Errore durante il caricamento del file:', error); setMessage(error.message || 'Si Ã¨ verificato un errore.', 'error'); }
+    } catch (error) { console.error('Errore durante il caricamento del file:', error); setMessage(error.message || 'Si è verificato un errore.', 'error'); }
   });
 
   // Signatures list
@@ -93,10 +95,49 @@
   const fId = document.getElementById('f-id');
   const fTitolare = document.getElementById('f-titolare');
   const fEmail = document.getElementById('f-email');
+  const fRecapito = document.getElementById('f-recapito');
+  const fData = document.getElementById('f-data');
   const fFattura = document.getElementById('f-fattura');
+  const fInvio = document.getElementById('f-invio');
   const fPaid = document.getElementById('f-paid');
+  const fClear = document.getElementById('f-clear');
+  const editModal = document.getElementById('modal-edit');
+  const editForm = document.getElementById('edit-form');
+  const editMsg = document.getElementById('edit-msg');
+  const editFields = {
+    titolare: document.getElementById('edit-titolare'),
+    email: document.getElementById('edit-email'),
+    recapito: document.getElementById('edit-recapito'),
+    data: document.getElementById('edit-data'),
+    emesso: document.getElementById('edit-emesso'),
+    costo: document.getElementById('edit-costo'),
+    importo: document.getElementById('edit-importo'),
+    fattura: document.getElementById('edit-fattura'),
+    invio: document.getElementById('edit-invio')
+  };
+  let editingId = null;
   let sigPage = 1, sigTotalPages = 1, sigPageSize = sigPageSizeSel ? (parseInt(sigPageSizeSel.value, 10) || 20) : 20, sortBy = 'id', sortDir = 'asc';
-  const filters = { id: '', titolare: '', email: '', fattura_numero: '', emesso_da: '', paid: fPaid ? fPaid.value : '' };
+  const filters = {
+    id: '',
+    titolare: '',
+    email: '',
+    recapito_telefonico: '',
+    data_emissione: '',
+    fattura_numero: '',
+    fattura_tipo_invio: '',
+    emesso_da: '',
+    paid: fPaid ? fPaid.value : ''
+  };
+  const setFieldValue = (el, value) => { if (!el) return; el.value = value ?? ''; };
+  const openEditModal = () => { if (!editModal) return; editModal.classList.remove('hidden'); editModal.setAttribute('aria-hidden', 'false'); };
+  const closeEditModal = () => {
+    if (!editModal) return;
+    editModal.classList.add('hidden');
+    editModal.setAttribute('aria-hidden', 'true');
+    if (editMsg) editMsg.textContent = '';
+    editingId = null;
+  };
+  editModal?.addEventListener('click', (e) => { const t = e.target; if (t && t.getAttribute('data-close') === 'true') closeEditModal(); });
   function setSortIndicator() { thSortables.forEach((th) => { th.classList.remove('asc', 'desc'); if (th.dataset.sort === sortBy) th.classList.add(sortDir); }); }
   async function loadSignatures(page = 1) {
     try {
@@ -108,9 +149,11 @@
       const rows = Array.isArray(data.data) ? data.data : [];
       sigPage = data.page || 1; sigTotalPages = data.totalPages || 1; const total = data.total || 0;
       sigBody.innerHTML = rows.map((r) => {
-        const emHint = r.emesso_da ? ` <span class=\"hint\" title=\"Emesso da: ${esc(r.emesso_da)}\">i</span>` : '';
-        const paidBtn = `<button class=\"icon-btn\" data-action=\"toggle-paid\" data-id=\"${r.id}\" data-paid=\"${r.paid ? 1 : 0}\" title=\"${r.paid ? 'Segna non pagata' : 'Segna pagata'}\">${r.paid ? '&check;' : '&times;'}</button>`;
-        const renewBtn = `<button class=\"icon-btn\" title=\"Vedi rinnovi\" data-action=\"renewals\" data-sigid=\"${r.id}\">&#8635;</button>`;
+        const emHint = r.emesso_da ? ` <span class="hint-icon" title="Emesso da: ${esc(r.emesso_da)}">i</span>` : '';
+        const editBtn = `<button class="icon-btn" title="Modifica" data-action="edit" data-id="${r.id}">&#9998;</button>`;
+        const paidClass = r.paid ? 'icon-btn-success' : 'icon-btn-danger';
+        const paidBtn = `<button class="icon-btn ${paidClass}" data-action="toggle-paid" data-id="${r.id}" data-paid="${r.paid ? 1 : 0}" title="${r.paid ? 'Segna non pagata' : 'Segna pagata'}">${r.paid ? '&check;' : '&times;'}</button>`;
+        const renewBtn = `<button class="icon-btn" title="Vedi rinnovi" data-action="renewals" data-sigid="${r.id}">&#8635;</button>`;
         return `<tr>
           <td>${r.id ?? ''}</td>
           <td>${r.titolare ?? ''}</td>
@@ -121,13 +164,13 @@
           <td>${fmt.money(r.importo_ie)}</td>
           <td>${r.fattura_numero ?? ''}</td>
           <td>${r.fattura_tipo_invio ?? ''}</td>
-          <td>${paidBtn} ${renewBtn}</td>
+          <td><span class="action-group">${editBtn}${paidBtn}${renewBtn}</span></td>
         </tr>`;
       }).join('');
       sigPageInfo.textContent = `Pagina ${sigPage} / ${sigTotalPages}`;
       sigPrev.disabled = sigPage <= 1; sigNext.disabled = sigPage >= sigTotalPages;
       const start = total === 0 ? 0 : (sigPage - 1) * sigPageSize + 1; const end = total === 0 ? 0 : start + rows.length - 1;
-      sigRange.textContent = `Mostrando ${start}â€“${end} di ${total}`; setSortIndicator();
+      sigRange.textContent = `Mostrando ${start}–${end} di ${total}`; setSortIndicator();
     } catch (e) { console.error(e); }
   }
   sigPrev?.addEventListener('click', () => { if (sigPage > 1) loadSignatures(sigPage - 1); });
@@ -138,8 +181,31 @@
   fId?.addEventListener('input', () => { filters.id = fId.value.trim(); scheduleFilter(); });
   fTitolare?.addEventListener('input', () => { filters.titolare = fTitolare.value.trim(); scheduleFilter(); });
   fEmail?.addEventListener('input', () => { filters.email = fEmail.value.trim(); scheduleFilter(); });
+  fRecapito?.addEventListener('input', () => { filters.recapito_telefonico = fRecapito.value.trim(); scheduleFilter(); });
+  fData?.addEventListener('change', () => { filters.data_emissione = fData.value; scheduleFilter(); });
   fFattura?.addEventListener('input', () => { filters.fattura_numero = fFattura.value.trim(); scheduleFilter(); });
+  fInvio?.addEventListener('input', () => { filters.fattura_tipo_invio = fInvio.value.trim(); scheduleFilter(); });
   fPaid?.addEventListener('change', () => { filters.paid = fPaid.value; loadSignatures(1); });
+  fClear?.addEventListener('click', () => {
+    if (fId) fId.value = '';
+    if (fTitolare) fTitolare.value = '';
+    if (fEmail) fEmail.value = '';
+    if (fRecapito) fRecapito.value = '';
+    if (fData) fData.value = '';
+    if (fFattura) fFattura.value = '';
+    if (fInvio) fInvio.value = '';
+    if (fPaid) fPaid.value = '';
+    filters.id = '';
+    filters.titolare = '';
+    filters.email = '';
+    filters.recapito_telefonico = '';
+    filters.data_emissione = '';
+    filters.fattura_numero = '';
+    filters.fattura_tipo_invio = '';
+    filters.emesso_da = '';
+    filters.paid = '';
+    loadSignatures(1);
+  });
   sigBody?.addEventListener('click', async (e) => {
     const tgl = e.target.closest('button[data-action="toggle-paid"]');
     if (tgl) {
@@ -153,6 +219,12 @@
       } catch (err) { console.error(err); }
       return;
     }
+    const editBtn = e.target.closest('button[data-action="edit"]');
+    if (editBtn) {
+      const id = editBtn.getAttribute('data-id');
+      if (id) { await openEditModalFor(id); }
+      return;
+    }
     const btn = e.target.closest('button[data-action="renewals"]'); if (!btn) return; const sigId = btn.getAttribute('data-sigid'); if (!sigId) return; loadRenewalsIntoModal(sigId);
   });
 
@@ -164,8 +236,12 @@
   const modalTitle = document.getElementById('modal-renewals-title');
   const openModal = () => { modal.classList.remove('hidden'); modal.setAttribute('aria-hidden', 'false'); };
   const closeModal = () => { modal.classList.add('hidden'); modal.setAttribute('aria-hidden', 'true'); };
-  modal?.addEventListener('click', (e) => { const t = e.target; if (t && t.getAttribute('data-close') === 'true') closeModal(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+    modal?.addEventListener('click', (e) => { const t = e.target; if (t && t.getAttribute('data-close') === 'true') closeModal(); });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      if (!modal.classList.contains('hidden')) closeModal();
+      if (editModal && !editModal.classList.contains('hidden')) closeEditModal();
+    });
   async function loadRenewalsIntoModal(sigId) {
     modalTitle.textContent = `Rinnovi per ID ${sigId}`;
     renewalsBody.innerHTML = ''; renewalsEmpty.style.display = ''; renewalsWrap.style.display = 'none'; openModal();
@@ -277,7 +353,60 @@
   const siIdInput = document.getElementById('si-id');
   const siEmessoInput = document.getElementById('si-emesso');
   const siReferenceInput = document.getElementById('si-ref-id');
-  const assetCheckboxes = Array.from(document.querySelectorAll('input[data-asset-category]'));
+  const insertAssetCheckboxes = Array.from(document.querySelectorAll('#insert-form input[data-asset-category]'));
+  const editAssetCheckboxes = Array.from(document.querySelectorAll('#edit-form input[data-asset-category]'));
+  const normalizeAssetCategory = (value) => (value ? String(value).trim().replace(/\\s+/g, '_').toUpperCase() : '');
+  const normalizeAssetSubtype = (value) => (value ? String(value).trim().toUpperCase() : '');
+  const TRUTHY_TOKENS = new Set(['1', 'true', 't', 'yes', 'y', 'si', 's', 'ok', 'x']);
+  const FALSY_TOKENS = new Set(['0', 'false', 'f', 'no', 'n', 'off', 'null', 'undefined', '']);
+  const isTruthyValue = (value) => {
+    if (value === true) return true;
+    if (value === false) return false;
+    if (typeof value === 'number') return !Number.isNaN(value) && value !== 0;
+    if (value == null) return false;
+    if (typeof value === 'string') {
+      const normalized = value.trim().toLowerCase();
+      if (FALSY_TOKENS.has(normalized)) return false;
+      if (TRUTHY_TOKENS.has(normalized)) return true;
+      const numeric = Number(normalized);
+      if (!Number.isNaN(numeric)) return numeric !== 0;
+      return true;
+    }
+    return Boolean(value);
+  };
+  const resetCheckboxes = (checkboxes) => { checkboxes.forEach((cb) => { if (cb) cb.checked = false; }); };
+  const applyAssetsToCheckboxes = (checkboxes, assets) => {
+    resetCheckboxes(checkboxes);
+    if (!Array.isArray(assets)) return;
+    assets.forEach((asset) => {
+      if (!asset) return;
+      const category = normalizeAssetCategory(asset.category);
+      const subtype = normalizeAssetSubtype(asset.subtype);
+      if (!category || !subtype) return;
+      const checkbox = checkboxes.find((cb) => cb
+        && normalizeAssetCategory(cb.getAttribute('data-asset-category')) === category
+        && normalizeAssetSubtype(cb.value) === subtype);
+      if (checkbox) {
+        const rawValue = asset.has_item ?? asset.value ?? 1;
+        checkbox.checked = isTruthyValue(rawValue);
+      }
+    });
+  };
+  const collectCheckboxAssets = (checkboxes) => {
+    const selected = [];
+    const seen = new Set();
+    checkboxes.forEach((cb) => {
+      if (!cb || !cb.checked) return;
+      const category = normalizeAssetCategory(cb.getAttribute('data-asset-category'));
+      const subtype = normalizeAssetSubtype(cb.value);
+      if (!category || !subtype) return;
+      const key = category + '::' + subtype;
+      if (seen.has(key)) return;
+      seen.add(key);
+      selected.push({ category, subtype });
+    });
+    return selected;
+  };
   let isEditingExisting = false;
   async function fetchNextId(force = false) {
     if (isEditingExisting && !force) return;
@@ -311,29 +440,11 @@
     const num = Number(value);
     return Number.isNaN(num) ? undefined : num;
   };
-  const resetAssetChoices = () => { assetCheckboxes.forEach((cb) => { cb.checked = false; }); };
-  const applyAssetSelection = (assets) => {
-    resetAssetChoices();
-    if (!Array.isArray(assets)) return;
-    assets.forEach((asset) => {
-      if (!asset) return;
-      const category = typeof asset.category === 'string' ? asset.category.trim().replace(/\s+/g, '_').toUpperCase() : '';
-      const subtype = typeof asset.subtype === 'string' ? asset.subtype.trim().toUpperCase() : '';
-      if (!category || !subtype) return;
-      const checkbox = assetCheckboxes.find((cb) => (cb.getAttribute('data-asset-category') || '').trim().replace(/\s+/g, '_').toUpperCase() === category && (cb.value || '').toUpperCase() === subtype);
-      if (checkbox) {
-        const rawValue = asset.has_item ?? asset.value ?? 1;
-        const numeric = Number(rawValue);
-        const isSelected = Number.isNaN(numeric) ? Boolean(rawValue) : numeric !== 0;
-        checkbox.checked = isSelected;
-      }
-    });
-  };
   const enterNewMode = () => {
     isEditingExisting = false;
     if (insertForm) insertForm.reset();
     if (siMsg) siMsg.textContent = '';
-    resetAssetChoices();
+    resetCheckboxes(insertAssetCheckboxes);
     if (siSearch) siSearch.value = '';
     if (siSuggest) { siSuggest.classList.add('hidden'); siSuggest.innerHTML = ''; }
     if (siLoadId) siLoadId.value = '';
@@ -401,21 +512,8 @@
       importo_ie: getOptionalNumber('si-importo'),
       paid: getInputEl('si-paid')?.checked ? 1 : 0,
     };
-    const selectedAssets = [];
-    const seenAssets = new Set();
-    assetCheckboxes.forEach((cb) => {
-      if (!cb) return;
-      const category = (cb.getAttribute('data-asset-category') || '').trim().replace(/\s+/g, '_').toUpperCase();
-      const subtype = (cb.value || '').trim().toUpperCase();
-      if (!category || !subtype) return;
-      const key = `${category}::${subtype}`;
-      if (cb.checked && !seenAssets.has(key)) {
-        seenAssets.add(key);
-        selectedAssets.push({ category, subtype });
-      }
-    });
+    const selectedAssets = collectCheckboxAssets(insertAssetCheckboxes);
     payload.assets = selectedAssets;
-    payload.reference_id = getOptionalNumber('si-ref-id');
     try {
       const res = await fetch('/api/signatures', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const out = await res.json().catch(() => ({}));
@@ -424,17 +522,63 @@
       if (siMsg) siMsg.textContent = `Salvato ID ${out.id}.`;
     } catch (e) { console.error(e); if (siMsg) siMsg.textContent = e.message || 'Errore.'; }
   });
-  let siTimer; async function searchSignatures(q) { if (!siSuggest) return; if (!q || q.trim().length < 2) { siSuggest.classList.add('hidden'); siSuggest.innerHTML=''; return; } try { const res = await fetch(`/api/signatures/search?q=${encodeURIComponent(q.trim())}&limit=20`); if (!res.ok) throw new Error('Errore ricerca'); const json = await res.json(); const list = Array.isArray(json.data) ? json.data : []; if (list.length === 0) { siSuggest.classList.add('hidden'); siSuggest.innerHTML=''; return; } siSuggest.classList.remove('hidden'); siSuggest.innerHTML = `<div class="suggest-list">${list.map(r => `<div class="suggest-item" data-id="${r.id}"><strong>${esc(r.titolare ?? '')}</strong> <small>(ID ${r.id})</small><br><span class="muted">${esc(r.email ?? '')}${r.recapito_telefonico ? ' Â· ' + esc(r.recapito_telefonico) : ''}</span></div>`).join('')}</div>`; } catch (e) { console.error(e); } }
-  siSearch?.addEventListener('input', () => { clearTimeout(siTimer); siTimer = setTimeout(() => searchSignatures(siSearch.value), 250); });
-  siSuggest?.addEventListener('click', async (e) => { const item = e.target.closest('.suggest-item'); if (!item) return; const id = item.getAttribute('data-id'); if (id) { await loadSignatureIntoForm(id); siSuggest.classList.add('hidden'); } });
-  document.addEventListener('click', (e) => { if (siSuggest && !siSuggest.contains(e.target) && e.target !== siSearch) { siSuggest.classList.add('hidden'); } });
-  siLoadBtn?.addEventListener('click', async () => { const id = siLoadId?.value; if (!id) return; await loadSignatureIntoForm(id); });
+  let siTimer;
+  async function searchSignatures(q) {
+    if (!siSuggest) return;
+    const query = (q ?? '').trim();
+    if (query.length < 2) {
+      siSuggest.classList.add('hidden');
+      siSuggest.innerHTML = '';
+      return;
+    }
+    try {
+      const res = await fetch(`/api/signatures/search?q=${encodeURIComponent(query)}&limit=20`);
+      if (!res.ok) throw new Error('Errore ricerca');
+      const json = await res.json();
+      const list = Array.isArray(json.data) ? json.data : [];
+      if (list.length === 0) {
+        siSuggest.classList.add('hidden');
+        siSuggest.innerHTML = '';
+        return;
+      }
+      siSuggest.classList.remove('hidden');
+      siSuggest.innerHTML = `<div class="suggest-list">${list.map(r => `<div class="suggest-item" data-id="${r.id}"><strong>${esc(r.titolare ?? '')}</strong> <small>(ID ${r.id})</small><br><span class="muted">${esc(r.email ?? '')}${r.recapito_telefonico ? ' � ' + esc(r.recapito_telefonico) : ''}</span></div>`).join('')}</div>`;
+    } catch (err) {
+      console.error(err);
+    }
+  }
+  siSearch?.addEventListener('input', () => {
+    clearTimeout(siTimer);
+    siTimer = setTimeout(() => searchSignatures(siSearch.value), 250);
+  });
+  async function fetchSignature(id) {
+    const res = await fetch(`/api/signatures/${encodeURIComponent(id)}`);
+    if (!res.ok) throw new Error('Firma non trovata');
+    const json = await res.json();
+    return json.data || {};
+  }
+  siSuggest?.addEventListener('click', async (e) => {
+    const item = e.target.closest('.suggest-item');
+    if (!item) return;
+    const id = item.getAttribute('data-id');
+    if (!id) return;
+    await loadSignatureIntoForm(id);
+    siSuggest.classList.add('hidden');
+  });
+  document.addEventListener('click', (e) => {
+    if (!siSuggest) return;
+    if (!siSuggest.classList.contains('hidden') && !siSuggest.contains(e.target) && e.target !== siSearch) {
+      siSuggest.classList.add('hidden');
+    }
+  });
+  siLoadBtn?.addEventListener('click', async () => {
+    const id = siLoadId?.value;
+    if (!id) return;
+    await loadSignatureIntoForm(id);
+  });
   async function loadSignatureIntoForm(id) {
     try {
-      const res = await fetch(`/api/signatures/${encodeURIComponent(id)}`);
-      if (!res.ok) throw new Error('Firma non trovata');
-      const json = await res.json();
-      const r = json.data || {};
+      const r = await fetchSignature(id);
       const setVal = (sel, v) => { const el = document.getElementById(sel); if (el) el.value = v ?? ''; };
       isEditingExisting = true;
       if (siNextBtn) siNextBtn.disabled = true;
@@ -446,15 +590,78 @@
       setVal('si-emesso', r.emesso_da ?? 'A.F.');
       setVal('si-fnum', r.fattura_numero);
       setVal('si-finvio', r.fattura_tipo_invio);
-      setVal('si-costo', (typeof r.costo_ie === 'number' ? r.costo_ie : (r.costo_ie ?? '')));
-      setVal('si-importo', (typeof r.importo_ie === 'number' ? r.importo_ie : (r.importo_ie ?? '')));
-      setVal('si-data', r.data_emissione ? String(r.data_emissione).slice(0,10) : '');
-      applyAssetSelection(Array.isArray(r.assets) ? r.assets : []);
+      setVal('si-costo', typeof r.costo_ie === 'number' ? r.costo_ie : (r.costo_ie ?? ''));
+      setVal('si-importo', typeof r.importo_ie === 'number' ? r.importo_ie : (r.importo_ie ?? ''));
+      setVal('si-data', r.data_emissione ? String(r.data_emissione).slice(0, 10) : '');
+      applyAssetsToCheckboxes(insertAssetCheckboxes, Array.isArray(r.assets) ? r.assets : []);
       const paidEl = document.getElementById('si-paid'); if (paidEl) paidEl.checked = Boolean(r.paid);
-      if (siLoadId) siLoadId.value = r.id ?? '';
       if (siMsg) siMsg.textContent = `Dati precompilati da ID ${r.id}. Modifica se necessario e salva.`;
-    } catch (e) { console.error(e); if (siMsg) siMsg.textContent = e.message || 'Errore caricamento firma.'; }
+    } catch (error) {
+      console.error(error);
+      if (siMsg) siMsg.textContent = error.message || 'Errore caricamento firma.';
+    }
   }
+  async function openEditModalFor(id) {
+    if (!editForm) return;
+    editingId = id;
+    editForm.reset();
+    Object.values(editFields).forEach((el) => { if (el) el.value = ''; });
+    if (editMsg) editMsg.textContent = 'Caricamento...';
+    try {
+      const r = await fetchSignature(id);
+      setFieldValue(editFields.titolare, r.titolare);
+      setFieldValue(editFields.email, r.email);
+      setFieldValue(editFields.recapito, r.recapito_telefonico);
+      setFieldValue(editFields.data, r.data_emissione ? String(r.data_emissione).slice(0, 10) : '');
+      setFieldValue(editFields.emesso, r.emesso_da ?? '');
+      setFieldValue(editFields.fattura, r.fattura_numero);
+      setFieldValue(editFields.invio, r.fattura_tipo_invio);
+      setFieldValue(editFields.costo, typeof r.costo_ie === 'number' ? r.costo_ie : (r.costo_ie ?? ''));
+      setFieldValue(editFields.importo, typeof r.importo_ie === 'number' ? r.importo_ie : (r.importo_ie ?? ''));
+      applyAssetsToCheckboxes(editAssetCheckboxes, Array.isArray(r.assets) ? r.assets : []);
+      if (editMsg) editMsg.textContent = '';
+      openEditModal();
+    } catch (error) {
+      console.error(error);
+      if (editMsg) editMsg.textContent = error.message || 'Errore nel caricamento dei dati.';
+      editingId = null;
+    }
+  }
+  editForm?.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    if (!editingId) { closeEditModal(); return; }
+    if (editMsg) editMsg.textContent = '';
+    const titolare = editFields.titolare?.value?.trim() || '';
+    if (!titolare) { if (editMsg) editMsg.textContent = 'Il campo Titolare � obbligatorio.'; return; }
+    const payload = {
+      titolare,
+      email: editFields.email?.value?.trim() || null,
+      recapito_telefonico: editFields.recapito?.value?.trim() || null,
+      data_emissione: editFields.data?.value || null,
+      emesso_da: editFields.emesso?.value?.trim() || null,
+      fattura_numero: editFields.fattura?.value?.trim() || null,
+      fattura_tipo_invio: editFields.invio?.value?.trim() || null,
+      costo_ie: editFields.costo?.value === '' ? null : Number(editFields.costo.value),
+      importo_ie: editFields.importo?.value === '' ? null : Number(editFields.importo.value),
+    };
+    if (Number.isNaN(payload.costo_ie)) payload.costo_ie = null;
+    if (Number.isNaN(payload.importo_ie)) payload.importo_ie = null;
+    payload.assets = collectCheckboxAssets(editAssetCheckboxes);
+    try {
+      const res = await fetch(`/api/signatures/${encodeURIComponent(editingId)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out?.message || 'Errore durante l\'aggiornamento.');
+      closeEditModal();
+      await loadSignatures(sigPage);
+    } catch (error) {
+      console.error(error);
+      if (editMsg) editMsg.textContent = error.message || 'Errore durante l\'aggiornamento.';
+    }
+  });
 
   // Initial Dashboard
   if (insertForm) enterNewMode();
@@ -462,8 +669,6 @@
   loadExpiring(initialDays, 1);
   
 });
-
-
 
 
 

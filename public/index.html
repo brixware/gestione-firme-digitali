@@ -146,23 +146,24 @@
                                 <th data-sort="recapito_telefonico">Recapito</th>
                                 <th data-sort="data_emissione">Data Emissione</th>
                                 <th data-sort="costo_ie">Costo (i.e.)</th>
-                                <th data-sort="importo_ie">Importo (i.e.)</th>
-                                <th data-sort="fattura_numero">Fattura N.</th>
-                                <th data-sort="fattura_tipo_invio">Tipo invio</th>
-                                <th>Azioni</th>
-                            </tr>
-                            <tr class="filters">
-                                <th><input id="f-id" type="string" placeholder="ID" /></th>
-                                <th><input id="f-titolare" type="text" placeholder="Titolare" /></th>
-                                <th><input id="f-email" type="text" placeholder="Email" /></th>
-                                <th></th>
-                                <th></th>
-                                <th></th>
-                                <th></th>
-                                <th><input id="f-fattura" type="text" placeholder="Fattura N." /></th>
-                                <th></th>
-                            </tr>
-                        </thead>
+                            <th data-sort="importo_ie">Importo (i.e.)</th>
+                            <th data-sort="fattura_numero">Fattura N.</th>
+                            <th data-sort="fattura_tipo_invio">Tipo invio</th>
+                            <th>Azioni</th>
+                        </tr>
+                        <tr class="filters">
+                            <th><input id="f-id" type="string" placeholder="ID" /></th>
+                            <th><input id="f-titolare" type="text" placeholder="Titolare" /></th>
+                            <th><input id="f-email" type="text" placeholder="Email" /></th>
+                            <th><input id="f-recapito" type="text" placeholder="Recapito" /></th>
+                            <th><input id="f-data" type="date" /></th>
+                            <th></th>
+                            <th></th>
+                            <th><input id="f-fattura" type="text" placeholder="Fattura N." /></th>
+                            <th><input id="f-invio" type="text" placeholder="Tipo invio" /></th>
+                            <th><button id="f-clear" type="button" class="btn btn-secondary">Pulisci</button></th>
+                        </tr>
+                    </thead>
                         <tbody id="sig-body"></tbody>
                     </table>
                 </div>
@@ -340,6 +341,139 @@
                 <p class="muted">Prossimamente: flusso guidato per il rinnovo.</p>
             </section>
         </main>
+    </div>
+    <!-- Modale Modifica -->
+    <div id="modal-edit" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="modal-edit-title">
+        <div class="modal-backdrop" data-close="true"></div>
+        <div class="modal-dialog">
+            <div class="modal-header">
+                <h2 id="modal-edit-title">Modifica Firma</h2>
+                <button class="modal-close" title="Chiudi" data-close="true">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="edit-form" class="form-grid" aria-describedby="edit-msg" novalidate>
+                    <div class="form-row">
+                        <label for="edit-titolare">Titolare *</label>
+                        <input id="edit-titolare" name="titolare" type="text" required aria-required="true">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-email">Email</label>
+                        <input id="edit-email" name="email" type="email" autocomplete="email">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-recapito">Recapito telefonico</label>
+                        <input id="edit-recapito" name="recapito" type="text" autocomplete="tel">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-data">Data emissione</label>
+                        <input id="edit-data" name="data_emissione" type="date">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-emesso">Emesso da</label>
+                        <input id="edit-emesso" name="emesso_da" type="text">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-costo">Costo (i.e.)</label>
+                        <input id="edit-costo" name="costo_ie" type="number" step="0.01" inputmode="decimal">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-importo">Importo (i.e.)</label>
+                        <input id="edit-importo" name="importo_ie" type="number" step="0.01" inputmode="decimal">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-fattura">Fattura numero</label>
+                        <input id="edit-fattura" name="fattura_numero" type="text" autocomplete="off">
+                    </div>
+                    <div class="form-row">
+                        <label for="edit-invio">Tipo invio fattura</label>
+                        <input id="edit-invio" name="fattura_tipo_invio" type="text" autocomplete="off">
+                    </div>
+                    <div class="asset-grid">
+                        <fieldset class="asset-group">
+                            <legend>Kit</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-kit-std" value="STD" data-asset-category="KIT">
+                                    <span>STD</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-kit-tok" value="TOK" data-asset-category="KIT">
+                                    <span>TOK</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-kit-ak" value="AK" data-asset-category="KIT">
+                                    <span>AK</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-kit-akcns" value="AK-CNS" data-asset-category="KIT">
+                                    <span>AK-CNS</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="asset-group">
+                            <legend>Smart Card</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-smart-std" value="STD" data-asset-category="SMART_CARD">
+                                    <span>STD</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-smart-sim" value="SIM" data-asset-category="SMART_CARD">
+                                    <span>SIM</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-smart-tav" value="TAV" data-asset-category="SMART_CARD">
+                                    <span>TAV</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="asset-group">
+                            <legend>Lettore</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-lettore-tav" value="TAV" data-asset-category="LETTORE">
+                                    <span>TAV</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-lettore-tok" value="TOK" data-asset-category="LETTORE">
+                                    <span>TOK</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-lettore-ak" value="AK" data-asset-category="LETTORE">
+                                    <span>AK</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                        <fieldset class="asset-group">
+                            <legend>Certificato</legend>
+                            <div class="asset-options">
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-certificato-cnsl" value="CNS-L" data-asset-category="CERTIFICATO">
+                                    <span>CNS-L</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-certificato-cns" value="CNS" data-asset-category="CERTIFICATO">
+                                    <span>CNS</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-certificato-cfd" value="CFD" data-asset-category="CERTIFICATO">
+                                    <span>CFD</span>
+                                </label>
+                                <label class="asset-chip">
+                                    <input type="checkbox" id="edit-asset-certificato-cfdr" value="CFD-R" data-asset-category="CERTIFICATO">
+                                    <span>CFD-R</span>
+                                </label>
+                            </div>
+                        </fieldset>
+                    </div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn">Salva</button>
+                        <button type="button" class="btn btn-secondary" data-close="true">Annulla</button>
+                        <span id="edit-msg" class="muted"></span>
+                    </div>
+                </form>
+            </div>
+        </div>
     </div>
     <!-- Modale Rinnovi -->
     <div id="modal-renewals" class="modal hidden" aria-hidden="true" role="dialog" aria-labelledby="modal-renewals-title">

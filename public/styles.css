@@ -253,12 +253,52 @@ button:active { transform: translateY(1px); }
 .filters input { width: 100%; }
 
 /* Icon button */
-.icon-btn { background: transparent; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; cursor: pointer; }
-.icon-btn { font-size: 14px; line-height: 1; color: var(--text); }
-.icon-btn:hover { background: rgba(11,95,173,.12); color: var(--text); }
-.icon-btn:focus { outline: 2px solid #68a8e8; outline-offset: 1px; }
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--secondary);
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: #fff;
+  box-shadow: 0 4px 10px rgba(11,95,173,.25);
+  transition: background .2s ease, box-shadow .2s ease;
+}
+.icon-btn:hover { background: var(--secondary-light); box-shadow: 0 6px 14px rgba(11,95,173,.28); }
+.icon-btn:focus { outline: 2px solid rgba(243,108,33,.45); outline-offset: 1px; }
+.icon-btn-success { background: #10b981; box-shadow: 0 4px 10px rgba(16,185,129,.25); }
+.icon-btn-success:hover { background: #34d399; box-shadow: 0 6px 14px rgba(16,185,129,.3); }
+.icon-btn-danger { background: #ef4444; box-shadow: 0 4px 10px rgba(239,68,68,.25); }
+.icon-btn-danger:hover { background: #f87171; box-shadow: 0 6px 14px rgba(239,68,68,.3); }
+.action-group {
+  display: inline-flex;
+  gap: 6px;
+}
 
 .hint { margin-left: 6px; cursor: help; color: var(--muted); }
+.hint-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(11,95,173,.12);
+  color: #0b5fad;
+  font-size: 11px;
+  font-weight: 700;
+  margin-left: 6px;
+  border: 1px solid rgba(11,95,173,.18);
+}
+.hint-icon:hover {
+  background: var(--secondary);
+  color: #fff;
+  border-color: var(--secondary);
+}
 
 /* Badge */
 .badge {

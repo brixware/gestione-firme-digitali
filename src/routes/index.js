@@ -72,7 +72,10 @@ router.get('/signatures', async (req, res) => {
             id: req.query.id,
             titolare: req.query.titolare,
             email: req.query.email,
+            recapito_telefonico: req.query.recapito_telefonico,
+            data_emissione: req.query.data_emissione,
             fattura_numero: req.query.fattura_numero,
+            fattura_tipo_invio: req.query.fattura_tipo_invio,
             emesso_da: req.query.emesso_da,
             paid: req.query.paid
         };
@@ -92,9 +95,21 @@ router.get('/signatures', async (req, res) => {
             whereParts.push('email LIKE ?');
             params.push(`%${String(filters.email).trim()}%`);
         }
+        if (filters.recapito_telefonico) {
+            whereParts.push('recapito_telefonico LIKE ?');
+            params.push(`%${String(filters.recapito_telefonico).trim()}%`);
+        }
+        if (filters.data_emissione) {
+            whereParts.push('DATE(data_emissione) = ?');
+            params.push(String(filters.data_emissione).trim());
+        }
         if (filters.fattura_numero) {
             whereParts.push('fattura_numero LIKE ?');
             params.push(`%${String(filters.fattura_numero).trim()}%`);
+        }
+        if (filters.fattura_tipo_invio) {
+            whereParts.push('fattura_tipo_invio LIKE ?');
+            params.push(`%${String(filters.fattura_tipo_invio).trim()}%`);
         }
         if (filters.emesso_da) {
             whereParts.push('emesso_da LIKE ?');
@@ -479,7 +494,7 @@ router.get('/signatures/:id', async (req, res) => {
         if (assetTableName) {
             try {
                 const [assetRows] = await db.pool.query(
-                    `SELECT category, subtype, has_item FROM \`${assetTableName}\` WHERE signature_id = ? AND has_item = 1`,
+                    `SELECT category, subtype, has_item FROM \`${assetTableName}\` WHERE signature_id = ?`,
                     [id]
                 );
                 assets = assetRows.map((row) => ({
