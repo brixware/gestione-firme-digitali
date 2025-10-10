@@ -83,6 +83,7 @@ const RENEWAL_COLUMN_MAPPING = {
     'Rinnovo 2 Data': 'rinnovo_data',
     'Rinnovo 3 Data': 'rinnovo_data',
     'Rinnovo DA': 'rinnovo_da',
+    'DA': 'rinnovo_da',
     'Costo (i.e.)': 'costo_ie',
     'Fatturazione Costo (i.e.)': 'costo_ie',
     'Importo (i.e.)': 'importo_ie',
@@ -177,10 +178,12 @@ const createDefinitions = (mapping) => {
 const ASSET_DEFINITIONS = createDefinitions(ASSET_COLUMN_MAPPING);
 const DOCUMENT_DEFINITIONS = createDefinitions(DOCUMENT_COLUMN_MAPPING);
 
+// Colori per evidenziazione certificati
 const BLUE_FILL_RGB = new Set(['FFCFE7F5', 'FFC1E5F5', 'FF99CCFF', 'FF7FB3FF']);
 const BLUE_BG_INDEXES = new Set([41, 42, 43, 9]);
+const LIGHT_BLUE_RGB = 'FF83CAFF'; // Colore allegato
 
-const isBlueHighlight = (cell) => {
+const isCellHighlighted = (cell, colorRgb) => {
     if (!cell || !cell.s) {
         return false;
     }
@@ -191,21 +194,37 @@ const isBlueHighlight = (cell) => {
         return false;
     }
 
+    // Log per debugging
+    if (fgColor || bgColor) {
+        debug('Stile cella:', {
+            fgColor: fgColor ? {
+                rgb: fgColor.rgb,
+                indexed: fgColor.indexed,
+                theme: fgColor.theme
+            } : null,
+            bgColor: bgColor ? {
+                rgb: bgColor.rgb,
+                indexed: bgColor.indexed
+            } : null,
+            patternType,
+            cercaColore: colorRgb
+        });
+    }
+
     if (fgColor) {
-        if (fgColor.rgb && BLUE_FILL_RGB.has(fgColor.rgb.toUpperCase())) {
+        if (fgColor.rgb && fgColor.rgb.toUpperCase() === colorRgb) {
             return true;
         }
         if (typeof fgColor.indexed === 'number' && BLUE_BG_INDEXES.has(fgColor.indexed)) {
             return true;
         }
         if (typeof fgColor.theme === 'number') {
-            // theme colors for blue shades commonly 0 or 2, fallback treat as highlight
             return true;
         }
     }
 
     if (bgColor) {
-        if (bgColor.rgb && BLUE_FILL_RGB.has(bgColor.rgb.toUpperCase())) {
+        if (bgColor.rgb && bgColor.rgb.toUpperCase() === colorRgb) {
             return true;
         }
         if (typeof bgColor.indexed === 'number' && BLUE_BG_INDEXES.has(bgColor.indexed)) {
@@ -215,6 +234,8 @@ const isBlueHighlight = (cell) => {
 
     return false;
 };
+
+const isBlueHighlight = (cell) => isCellHighlighted(cell, LIGHT_BLUE_RGB);
 
 const buildColumnNames = (headerRows) => {
     if (!Array.isArray(headerRows) || headerRows.length === 0) {
@@ -983,13 +1004,17 @@ const normaliseRenewalRecord = (rawRecord, sheetName) => {
 
         nuova_emissione_id: (() => {
             const rawValue = parseGenericValue(mapped.rinnovo_da) || parseGenericValue(rawRecord['DA']) || null;
-            if (!rawValue) return null;
+            if (!rawValue) {
+                info(`Record ${rawRecord['N°']}: Nessun valore trovato per rinnovo_da`);
+                return null;
+            }
 
-            debug('Controllo nuova_emissione_id in:', rawValue);
-            const match = String(rawValue).match(/^NE-(\d+)$/);
+            const stringValue = String(rawValue).trim();
+            info(`Record ${rawRecord['N°']}: Analisi valore rinnovo_da: "${stringValue}"`);
+            const match = stringValue.match(/^NE-(\d+)$/);
             if (match) {
-                const id = match[1];
-                debug('Trovato nuova_emissione_id:', id);
+                const id = parseInt(match[1], 10);
+                info(`Record ${rawRecord['N°']}: Trovato riferimento NE-${match[1]}`);
                 return id;
             }
             return null;
