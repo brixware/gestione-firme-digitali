@@ -392,7 +392,8 @@ router.get('/signatures/expiring', async (req, res) => {
                 SELECT r.signature_id AS id
                 FROM \`${renewalTable}\` r
                 WHERE r.data_scadenza IS NOT NULL
-                  AND r.data_scadenza BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
+                  AND r.data_scadenza > CURDATE()
+                  AND r.data_scadenza <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
                 GROUP BY r.signature_id
             ) t`,
             [days]
@@ -410,7 +411,8 @@ router.get('/signatures/expiring', async (req, res) => {
              FROM \`${renewalTable}\` r
              LEFT JOIN \`${baseTable}\` s ON s.id = r.signature_id
              WHERE r.data_scadenza IS NOT NULL
-               AND r.data_scadenza BETWEEN CURDATE() AND DATE_ADD(CURDATE(), INTERVAL ? DAY)
+               AND r.data_scadenza > CURDATE()
+               AND r.data_scadenza <= DATE_ADD(CURDATE(), INTERVAL ? DAY)
              GROUP BY r.signature_id, s.titolare, s.email, s.recapito_telefonico
              ORDER BY data_scadenza ASC
              LIMIT ? OFFSET ?`,
