@@ -310,6 +310,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Dashboard charts
   let yearlyChart, renewalsYearlyChart;
+  const formatPercentage = (value) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '0%';
+    const fixed = value.toFixed(2);
+    return `${fixed.endsWith('.00') ? fixed.slice(0, -3) : fixed}%`;
+  };
+  const formatCount = (value) => {
+    if (typeof value !== 'number' || Number.isNaN(value)) return '0';
+    return value.toLocaleString('it-IT');
+  };
+  const formatStatLabel = (row, { includeTotal = false } = {}) => {
+    const yearLabel = row.year == null ? 'Sconosciuto' : String(row.year);
+    const pieces = [`${yearLabel}`, formatCount(row.count)];
+    if (typeof row.percentage === 'number') {
+      pieces.push(`(${formatPercentage(row.percentage)})`);
+    }
+    let text = pieces.join(' ');
+    if (includeTotal && typeof row.total === 'number') {
+      text += ` su ${formatCount(row.total)}`;
+    }
+    return text;
+  };
+
   async function loadYearlyChart() {
     const canvas = document.getElementById('yearly-chart');
     if (!canvas || typeof Chart === 'undefined') return;
@@ -318,11 +340,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('Errore statistiche annuali');
       const json = await res.json();
       const rows = Array.isArray(json.data) ? json.data : [];
-      const labels = rows.map(r => (r.year == null ? 'Sconosciuto' : String(r.year)));
-      const data = rows.map(r => r.count || 0);
+      const labels = rows.map(row => formatStatLabel(row));
+      const data = rows.map(row => row.count || 0);
       const colors = labels.map((_, i) => `hsl(${(i * 47) % 360} 70% 60%)`);
       if (yearlyChart) yearlyChart.destroy();
-      yearlyChart = new Chart(canvas.getContext('2d'), { type: 'pie', data: { labels, datasets: [{ data, backgroundColor: colors }] }, options: { plugins: { legend: { position: 'bottom' } } } });
+      yearlyChart = new Chart(canvas.getContext('2d'), {
+        type: 'pie',
+        data: { labels, datasets: [{ data, backgroundColor: colors }] },
+        options: {
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const row = rows[context.dataIndex];
+                  return formatStatLabel(row);
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // No additional list rendering; chart labels already include counts and percentuali.
     } catch (e) { console.error(e); }
   }
   async function loadRenewalsYearlyChart() {
@@ -333,11 +373,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('Errore statistiche rinnovi annuali');
       const json = await res.json();
       const rows = Array.isArray(json.data) ? json.data : [];
-      const labels = rows.map(r => (r.year == null ? 'Sconosciuto' : String(r.year)));
-      const data = rows.map(r => r.count || 0);
+      const labels = rows.map(row => formatStatLabel(row));
+      const data = rows.map(row => row.count || 0);
       const colors = labels.map((_, i) => `hsl(${(i * 67) % 360} 70% 60%)`);
       if (renewalsYearlyChart) renewalsYearlyChart.destroy();
-      renewalsYearlyChart = new Chart(canvas.getContext('2d'), { type: 'pie', data: { labels, datasets: [{ data, backgroundColor: colors }] }, options: { plugins: { legend: { position: 'bottom' } } } });
+      renewalsYearlyChart = new Chart(canvas.getContext('2d'), {
+        type: 'pie',
+        data: { labels, datasets: [{ data, backgroundColor: colors }] },
+        options: {
+          plugins: {
+            legend: { position: 'bottom' },
+            tooltip: {
+              callbacks: {
+                label: (context) => {
+                  const row = rows[context.dataIndex];
+                  return formatStatLabel(row);
+                }
+              }
+            }
+          }
+        }
+      });
+
+      // No additional list rendering; chart labels already include counts and percentuali.
     } catch (e) { console.error(e); }
   }
 

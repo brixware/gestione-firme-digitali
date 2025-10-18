@@ -506,14 +506,22 @@ router.get('/signatures/stats/yearly', async (req, res) => {
              ORDER BY YEAR(data_emissione)`
         );
 
-        res.json({ data: rows });
+        const total = rows.reduce((acc, row) => acc + (row.count || 0), 0);
+        const enriched = rows.map((row) => ({
+            year: row.year,
+            count: row.count,
+            percentage:
+                total > 0 ? Number(((row.count / total) * 100).toFixed(2)) : 0,
+            total
+        }));
+
+        res.json({ data: enriched, total });
     } catch (error) {
         console.error('Errore stats yearly:', error);
         res.status(500).json({ message: 'Errore nel recupero delle statistiche annuali.' });
     }
 });
 
-// GET /api/signatures/stats/renewals/yearly
 router.get('/signatures/stats/renewals/yearly', async (req, res) => {
     try {
         const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
@@ -529,7 +537,16 @@ router.get('/signatures/stats/renewals/yearly', async (req, res) => {
              ORDER BY YEAR(rinnovo_data)`
         );
 
-        res.json({ data: rows });
+        const total = rows.reduce((acc, row) => acc + (row.count || 0), 0);
+        const enriched = rows.map((row) => ({
+            year: row.year,
+            count: row.count,
+            percentage:
+                total > 0 ? Number(((row.count / total) * 100).toFixed(2)) : 0,
+            total
+        }));
+
+        res.json({ data: enriched, total });
     } catch (error) {
         console.error('Errore stats renewals yearly:', error);
         res.status(500).json({ message: 'Errore nel recupero delle statistiche rinnovi annuali.' });
