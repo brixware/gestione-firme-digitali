@@ -32,7 +32,29 @@ const isValidAssetCombo = (category, subtype) => {
     return Array.isArray(allowed) && allowed.includes(sub);
 };
 
+const EUROPE_ROME_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Rome',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+});
+
+const formatDateEuropeRome = (value) => {
+    if (!value) {
+        return null;
+    }
+    if (value instanceof Date && !Number.isNaN(value.getTime())) {
+        return EUROPE_ROME_FORMATTER.format(value);
+    }
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : EUROPE_ROME_FORMATTER.format(parsed);
+};
+
+const toNumberOrNull = (value) =>
+    value === null || value === undefined ? null : Number(value);
+
 const router = express.Router();
+
 const uploadDirName = process.env.UPLOAD_DIR || 'uploads';
 const upload = multer({ dest: path.resolve(__dirname, '..', '..', uploadDirName) });
 
@@ -157,8 +179,16 @@ router.get('/signatures', async (req, res) => {
                          LIMIT ? OFFSET ?`;
         const [rows] = await db.pool.query(dataSql, [...params, pageSize, offset]);
 
+        const normalizedRows = rows.map((row) => ({
+            ...row,
+            data_emissione: formatDateEuropeRome(row.data_emissione),
+            costo_ie: row.costo_ie == null ? null : Number(row.costo_ie),
+            importo_ie: row.importo_ie == null ? null : Number(row.importo_ie),
+            paid: row.paid ? 1 : 0
+        }));
+
         const totalPages = Math.ceil(total / pageSize);
-        res.json({ data: rows, page, pageSize, total, totalPages });
+        res.json({ data: normalizedRows, page, pageSize, total, totalPages });
     } catch (error) {
         console.error('Errore signatures:', error);
         res.status(500).json({ message: 'Errore nel recupero delle firme.' });
@@ -419,8 +449,14 @@ router.get('/signatures/expiring', async (req, res) => {
             [days, pageSize, offset]
         );
 
+        const normalizedRows = rows.map((row) => ({
+            ...row,
+            data_scadenza: formatDateEuropeRome(row.data_scadenza),
+            days_left: row.days_left != null ? Number(row.days_left) : null
+        }));
+
         const totalPages = Math.max(1, Math.ceil(total / pageSize));
-        res.json({ data: rows, days, page, pageSize, total, totalPages });
+        res.json({ data: normalizedRows, days, page, pageSize, total, totalPages });
     } catch (error) {
         console.error('Errore expiring:', error);
         res.status(500).json({ message: 'Errore nel recupero delle scadenze.' });
@@ -508,7 +544,14 @@ router.get('/signatures/:id', async (req, res) => {
                 console.error('Errore recupero asset firma:', assetError);
             }
         }
-        res.json({ data: { ...rows[0], assets } });
+        const baseRecord = rows[0];
+        const normalizedRecord = {
+            ...baseRecord,
+            data_emissione: formatDateEuropeRome(baseRecord.data_emissione),
+            costo_ie: toNumberOrNull(baseRecord.costo_ie),
+            importo_ie: toNumberOrNull(baseRecord.importo_ie)
+        };
+        res.json({ data: { ...normalizedRecord, assets } });
     } catch (error) {
         console.error('Errore get signature:', error);
         res.status(500).json({ message: 'Errore nel recupero della firma.' });
@@ -538,7 +581,19 @@ router.get('/signatures/:id/renewals', async (req, res) => {
             [id]
         );
 
-        res.json({ data: rows });
+        const normalizedRows = rows.map((row) => ({
+            ...row,
+            data_emissione: formatDateEuropeRome(row.data_emissione),
+            data_scadenza: formatDateEuropeRome(row.data_scadenza),
+            rinnovo_data: formatDateEuropeRome(row.rinnovo_data),
+            data_riferimento_incasso: formatDateEuropeRome(row.data_riferimento_incasso),
+            created_at: formatDateEuropeRome(row.created_at),
+            updated_at: formatDateEuropeRome(row.updated_at),
+            costo_ie: toNumberOrNull(row.costo_ie),
+            importo_ie: toNumberOrNull(row.importo_ie)
+        }));
+
+        res.json({ data: normalizedRows });
     } catch (error) {
         console.error('Errore renewals:', error);
         res.status(500).json({ message: 'Errore nel recupero dei rinnovi.' });

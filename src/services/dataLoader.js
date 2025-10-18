@@ -386,6 +386,20 @@ const parseBoolean = (value) => {
     return false;
 };
 
+const EUROPE_ROME_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Rome',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+});
+
+const formatDateEuropeRome = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+        return null;
+    }
+    return EUROPE_ROME_FORMATTER.format(date);
+};
+
 const parseMoney = (value) => {
     if (value === null || value === undefined) {
         return null;
@@ -421,7 +435,9 @@ const parseDate = (value) => {
     // Se è già un oggetto Date
     if (value instanceof Date) {
         debug('Value is already a Date object');
-        return value.toISOString().slice(0, 10);
+        const formatted = formatDateEuropeRome(value);
+        debug('Formatted Date (Europe/Rome):', formatted);
+        return formatted;
     }
 
     // Se è una stringa ISO o timestamp
@@ -429,7 +445,9 @@ const parseDate = (value) => {
         debug('Value is an ISO date string');
         const date = new Date(value);
         if (!isNaN(date.getTime())) {
-            return date.toISOString().slice(0, 10);
+            const formatted = formatDateEuropeRome(date);
+            debug('ISO string formatted (Europe/Rome):', formatted);
+            return formatted;
         }
     }
 
@@ -439,7 +457,7 @@ const parseDate = (value) => {
         // Excel usa 1900 come anno base e conta i giorni da 1/1/1900
         // 25569 è il numero di giorni tra 1/1/1900 e 1/1/1970 (epoch Unix)
         const excelEpoch = new Date(Math.round((value - 25569) * 86400 * 1000));
-        const result = Number.isNaN(excelEpoch.getTime()) ? null : excelEpoch.toISOString().slice(0, 10);
+        const result = formatDateEuropeRome(excelEpoch);
         debug('Excel date result:', result);
         return result;
     }
@@ -482,7 +500,7 @@ const parseDate = (value) => {
             if (year < 100) year += year >= 50 ? 1900 : 2000;
             const d = new Date(year, month, day);
             if (!Number.isNaN(d.getTime())) {
-                const result = d.toISOString().slice(0, 10);
+                const result = formatDateEuropeRome(d);
                 debug('Successfully parsed dd/mm/yyyy:', result);
                 return result;
             }
@@ -497,7 +515,7 @@ const parseDate = (value) => {
             const day = Number.parseInt(m[3], 10);
             const d = new Date(year, month, day);
             if (!Number.isNaN(d.getTime())) {
-                const result = d.toISOString().slice(0, 10);
+                const result = formatDateEuropeRome(d);
                 debug('Successfully parsed yyyy/mm/dd:', result);
                 return result;
             }
@@ -536,7 +554,7 @@ const parseDate = (value) => {
 
                 const d = new Date(year, month, day);
                 if (!Number.isNaN(d.getTime())) {
-                    const result = d.toISOString().slice(0, 10);
+                    const result = formatDateEuropeRome(d);
                     debug('Successfully parsed alternative format:', result);
                     return result;
                 }
@@ -547,8 +565,8 @@ const parseDate = (value) => {
         debug('Trying native Date parser');
         const fallback = new Date(trimmed);
         if (!Number.isNaN(fallback.getTime())) {
-            const result = fallback.toISOString().slice(0, 10);
-            debug('Successfully parsed with native parser:', result);
+            const result = formatDateEuropeRome(fallback);
+            debug('Successfully parsed with native parser (Europe/Rome):', result);
             return result;
         }
     }
