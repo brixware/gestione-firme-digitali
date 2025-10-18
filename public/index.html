@@ -21,6 +21,7 @@
                 <a href="#" class="nav-link active" data-view="dashboard-view">Dashboard</a>
                 <a href="#" class="nav-link" data-view="upload-view">Carica XLS</a>
                 <a href="#" class="nav-link" data-view="statistics-view">Statistiche</a>
+                <a href="#" class="nav-link" data-view="reports-view">Report</a>
                 <div class="accordion">
                     <button class="accordion-header" aria-expanded="false" type="button">
                         <span>Firme Digitali</span>
@@ -101,6 +102,22 @@
                     <div class="card">
                         <h2 class="card-title">Rinnovate per anno</h2>
                         <canvas id="renewals-yearly-chart" height="160"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <section id="reports-view" class="view">
+                <h1>Report</h1>
+                <div class="grid-2">
+                    <div class="card stat-card">
+                        <h2 class="card-title">Firme in scadenza (30 giorni)</h2>
+                        <p id="report-expiring-count" class="stat-value">-</p>
+                        <p class="muted">Titolari con certificati che scadono entro 30 giorni.</p>
+                    </div>
+                    <div class="card stat-card">
+                        <h2 class="card-title">Firme non pagate</h2>
+                        <p id="report-unpaid-count" class="stat-value">-</p>
+                        <p class="muted">Firme prive di registrazione pagamento.</p>
                     </div>
                 </div>
             </section>

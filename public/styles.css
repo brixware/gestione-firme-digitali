@@ -342,6 +342,9 @@ button:active { transform: translateY(1px); }
   box-shadow: 0 26px 50px -38px rgba(15,23,42,.45);
   backdrop-filter: blur(2px);
 }
+.stat-card { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.stat-card .stat-value { font-size: 48px; font-weight: 700; margin: 4px 0; color: var(--secondary); letter-spacing: -0.5px; }
+.stat-card .muted { margin: 0; }
 .card-title { margin: 0 0 12px; font-size: 16px; color: var(--text); }
 
 /* Simple form layout */

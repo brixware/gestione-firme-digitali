@@ -553,6 +553,39 @@ router.get('/signatures/stats/renewals/yearly', async (req, res) => {
     }
 });
 
+router.get('/reports/summary', async (req, res) => {
+    try {
+        const baseTableEnv = process.env.DB_TABLE || 'digital_signatures';
+        const baseTable = baseTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || 'digital_signatures';
+        const renewalTableEnv = process.env.DB_RENEWAL_TABLE || `${baseTable}_renewals`;
+        const renewalTable = renewalTableEnv.replace(/[^a-zA-Z0-9_]/g, '') || `${baseTable}_renewals`;
+
+        const [expiringRows] = await db.pool.query(
+            `SELECT COUNT(*) AS total FROM (
+                SELECT r.signature_id
+                FROM \`${renewalTable}\` r
+                WHERE r.data_scadenza IS NOT NULL
+                  AND r.data_scadenza > CURDATE()
+                  AND r.data_scadenza <= DATE_ADD(CURDATE(), INTERVAL 30 DAY)
+                GROUP BY r.signature_id
+            ) t`
+        );
+        const expiringNext30 = expiringRows[0]?.total || 0;
+
+        const [unpaidRows] = await db.pool.query(
+            `SELECT COUNT(*) AS total
+             FROM \`${baseTable}\`
+             WHERE COALESCE(fattura_pagata, CASE WHEN data_riferimento_incasso IS NOT NULL THEN 1 ELSE 0 END) = 0`
+        );
+        const unpaidCount = unpaidRows[0]?.total || 0;
+
+        res.json({ expiringNext30, unpaidCount });
+    } catch (error) {
+        console.error('Errore report summary:', error);
+        res.status(500).json({ message: 'Errore nel recupero del report.' });
+    }
+});
+
 router.get('/live-reload', (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');

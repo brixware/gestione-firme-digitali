@@ -41,6 +41,9 @@ document.addEventListener('DOMContentLoaded', () => {
       loadYearlyChart();
       loadRenewalsYearlyChart();
     }
+    if (id === 'reports-view') {
+      loadReportSummary();
+    }
   };
   allLinks.forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
@@ -56,6 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Upload form
+  const reportExpiringEl = document.getElementById('report-expiring-count');
+  const reportUnpaidEl = document.getElementById('report-unpaid-count');
   const form = document.getElementById('uploadForm');
   const fileInput = document.getElementById('fileInput');
   const messageContainer = document.getElementById('message');
@@ -397,6 +402,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // No additional list rendering; chart labels already include counts and percentuali.
     } catch (e) { console.error(e); }
+  }
+
+  async function loadReportSummary() {
+    if (!reportExpiringEl || !reportUnpaidEl) return;
+    reportExpiringEl.textContent = '...';
+    reportUnpaidEl.textContent = '...';
+    try {
+      const res = await fetch('/api/reports/summary');
+      if (!res.ok) throw new Error('Errore report');
+      const data = await res.json();
+      const { expiringNext30, unpaidCount } = data || {};
+      reportExpiringEl.textContent = formatCount(expiringNext30 ?? 0);
+      reportUnpaidEl.textContent = formatCount(unpaidCount ?? 0);
+    } catch (error) {
+      console.error(error);
+      reportExpiringEl.textContent = '—';
+      reportUnpaidEl.textContent = '—';
+    }
   }
 
   // Insert view
