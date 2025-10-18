@@ -50,6 +50,20 @@ const formatDateEuropeRome = (value) => {
     return Number.isNaN(parsed.getTime()) ? null : EUROPE_ROME_FORMATTER.format(parsed);
 };
 
+const decodeMisencodedText = (value) => {
+    if (typeof value !== 'string') {
+        return value;
+    }
+    if (!/[Ã�Â]/.test(value)) {
+        return value;
+    }
+    try {
+        return Buffer.from(value, 'latin1').toString('utf8');
+    } catch (error) {
+        return value;
+    }
+};
+
 const toNumberOrNull = (value) =>
     value === null || value === undefined ? null : Number(value);
 
@@ -179,13 +193,28 @@ router.get('/signatures', async (req, res) => {
                          LIMIT ? OFFSET ?`;
         const [rows] = await db.pool.query(dataSql, [...params, pageSize, offset]);
 
-        const normalizedRows = rows.map((row) => ({
-            ...row,
-            data_emissione: formatDateEuropeRome(row.data_emissione),
-            costo_ie: row.costo_ie == null ? null : Number(row.costo_ie),
-            importo_ie: row.importo_ie == null ? null : Number(row.importo_ie),
-            paid: row.paid ? 1 : 0
-        }));
+        const normalizedRows = rows.map((row) => {
+            const decodedRow = { ...row };
+            [
+                'titolare',
+                'email',
+                'recapito_telefonico',
+                'emesso_da',
+                'fattura_numero',
+                'fattura_tipo_invio'
+            ].forEach((field) => {
+                if (decodedRow[field] != null) {
+                    decodedRow[field] = decodeMisencodedText(decodedRow[field]);
+                }
+            });
+            return {
+                ...decodedRow,
+                data_emissione: formatDateEuropeRome(decodedRow.data_emissione),
+                costo_ie: toNumberOrNull(decodedRow.costo_ie),
+                importo_ie: toNumberOrNull(decodedRow.importo_ie),
+                paid: decodedRow.paid ? 1 : 0
+            };
+        });
 
         const totalPages = Math.ceil(total / pageSize);
         res.json({ data: normalizedRows, page, pageSize, total, totalPages });
@@ -545,6 +574,18 @@ router.get('/signatures/:id', async (req, res) => {
             }
         }
         const baseRecord = rows[0];
+        [
+            'titolare',
+            'email',
+            'recapito_telefonico',
+            'emesso_da',
+            'fattura_numero',
+            'fattura_tipo_invio'
+        ].forEach((field) => {
+            if (baseRecord[field] != null) {
+                baseRecord[field] = decodeMisencodedText(baseRecord[field]);
+            }
+        });
         const normalizedRecord = {
             ...baseRecord,
             data_emissione: formatDateEuropeRome(baseRecord.data_emissione),
@@ -581,17 +622,34 @@ router.get('/signatures/:id/renewals', async (req, res) => {
             [id]
         );
 
-        const normalizedRows = rows.map((row) => ({
-            ...row,
-            data_emissione: formatDateEuropeRome(row.data_emissione),
-            data_scadenza: formatDateEuropeRome(row.data_scadenza),
-            rinnovo_data: formatDateEuropeRome(row.rinnovo_data),
-            data_riferimento_incasso: formatDateEuropeRome(row.data_riferimento_incasso),
-            created_at: formatDateEuropeRome(row.created_at),
-            updated_at: formatDateEuropeRome(row.updated_at),
-            costo_ie: toNumberOrNull(row.costo_ie),
-            importo_ie: toNumberOrNull(row.importo_ie)
-        }));
+        const normalizedRows = rows.map((row) => {
+            const decodedRow = { ...row };
+            [
+                'sheet_name',
+                'email',
+                'recapito_telefonico',
+                'rinnovo_da',
+                'fattura_numero',
+                'fattura_tipo_invio',
+                'fattura_tipo_pagamento',
+                'note'
+            ].forEach((field) => {
+                if (decodedRow[field] != null) {
+                    decodedRow[field] = decodeMisencodedText(decodedRow[field]);
+                }
+            });
+            return {
+                ...decodedRow,
+                data_emissione: formatDateEuropeRome(decodedRow.data_emissione),
+                data_scadenza: formatDateEuropeRome(decodedRow.data_scadenza),
+                rinnovo_data: formatDateEuropeRome(decodedRow.rinnovo_data),
+                data_riferimento_incasso: formatDateEuropeRome(decodedRow.data_riferimento_incasso),
+                created_at: formatDateEuropeRome(decodedRow.created_at),
+                updated_at: formatDateEuropeRome(decodedRow.updated_at),
+                costo_ie: toNumberOrNull(decodedRow.costo_ie),
+                importo_ie: toNumberOrNull(decodedRow.importo_ie)
+            };
+        });
 
         res.json({ data: normalizedRows });
     } catch (error) {

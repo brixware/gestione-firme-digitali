@@ -47,6 +47,20 @@ const formatDateRome = (date) => {
     return romeFormatter.format(date);
 };
 
+const decodeMisencodedText = (value) => {
+    if (typeof value !== 'string') {
+        return value;
+    }
+    if (!/[Ã�Â]/.test(value)) {
+        return value;
+    }
+    try {
+        return Buffer.from(value, 'latin1').toString('utf8');
+    } catch (error) {
+        return value;
+    }
+};
+
 const toIsoDate = (value) => {
     if (value === null || value === undefined || value === '' || value === '-') {
         return null;
@@ -173,6 +187,9 @@ const toText = (value) => {
     return stringified === '' ? null : stringified;
 };
 
+const toNumberOrNull = (value) =>
+    value === null || value === undefined ? null : Number(value);
+
 const toBooleanFlag = (value) => {
     if (value === null || value === undefined) {
         return 0;
@@ -222,16 +239,23 @@ const extractEmissionRecords = (worksheet) => {
             continue;
         }
 
+        const paymentRaw = row[24];
+        const paymentDate = toIsoDate(paymentRaw);
+        const paymentType = paymentDate ? 'Altro' : toText(paymentRaw);
+
         records.set(id, {
             id,
             titolare: toText(row[1]),
+            email: null,
+            recapito_telefonico: null,
             data_emissione: toIsoDate(row[15]),
             emesso_da: toText(row[16]),
             costo_ie: toMoney(row[20]),
             importo_ie: toMoney(row[21]),
             fattura_numero: toText(row[22]),
             fattura_tipo_invio: toText(row[23]),
-            fattura_tipo_pagamento: toText(row[24])
+            fattura_tipo_pagamento: paymentType,
+            data_riferimento_incasso: paymentDate
         });
     }
 
@@ -264,6 +288,17 @@ const extractRenewalRecords = (worksheet, sheetName) => {
             .map((value) => toText(value))
             .filter((value) => value && value.length > 0);
 
+        const paymentRaw = row[15];
+        const paymentDate = toIsoDate(paymentRaw);
+        let paymentType = toText(paymentRaw);
+        let paymentReference = null;
+        if (paymentDate) {
+            paymentType = 'Altro';
+            paymentReference = paymentDate;
+        }
+
+        const rinnovoDa = toText(row[10]);
+
         const record = {
             signature_id: id,
             sheet_name: sheetName,
@@ -276,13 +311,13 @@ const extractRenewalRecords = (worksheet, sheetName) => {
             data_emissione: toIsoDate(row[7]),
             data_scadenza: toIsoDate(row[8]),
             rinnovo_data: toIsoDate(row[9]),
-            rinnovo_da: toText(row[10]),
+            rinnovo_da: rinnovoDa,
             costo_ie: toMoney(row[11]),
             importo_ie: toMoney(row[12]),
             fattura_numero: toText(row[13]),
             fattura_tipo_invio: toText(row[14]),
-            fattura_tipo_pagamento: toText(row[15]),
-            data_riferimento_incasso: null,
+            fattura_tipo_pagamento: paymentType,
+            data_riferimento_incasso: paymentReference,
             nuova_emissione_id: null,
             note:
                 noteParts.length === 0
@@ -367,17 +402,21 @@ const normaliseDbText = (value) => {
     if (value === null || value === undefined) {
         return null;
     }
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        return trimmed === '' ? null : trimmed;
-    }
     if (value instanceof Date && !Number.isNaN(value.getTime())) {
         return formatDateRome(value);
     }
     if (typeof value === 'number') {
         return Number.isFinite(value) ? (Number.isInteger(value) ? String(value) : String(value)) : null;
     }
-    return String(value).trim() || null;
+    if (typeof value === 'string') {
+        const decoded = decodeMisencodedText(value);
+        const trimmed = decoded.trim();
+        return trimmed === '' || trimmed === '-' ? null : trimmed;
+    }
+    const stringified = String(value);
+    const decoded = decodeMisencodedText(stringified);
+    const trimmed = decoded.trim();
+    return trimmed === '' || trimmed === '-' ? null : trimmed;
 };
 
 const normaliseDbMoney = (value) => {
@@ -465,6 +504,40 @@ const main = async () => {
     const excelRenewalsBySheet = new Map();
     for (const name of renewalSheetNames) {
         excelRenewalsBySheet.set(name, extractRenewalRecords(workbook.Sheets[name], name));
+    }
+
+    const contactInfo = new Map();
+    for (const records of excelRenewalsBySheet.values()) {
+        for (const record of records) {
+            const id = record.signature_id;
+            if (!id) {
+                continue;
+            }
+            let info = contactInfo.get(id);
+            if (!info) {
+                info = { email: null, recapito_telefonico: null };
+                contactInfo.set(id, info);
+            }
+            if (record.email && !info.email) {
+                info.email = record.email;
+            }
+            if (record.recapito_telefonico && !info.recapito_telefonico) {
+                info.recapito_telefonico = record.recapito_telefonico;
+            }
+        }
+    }
+
+    for (const [id, baseRecord] of emissionRecords.entries()) {
+        const info = contactInfo.get(id);
+        if (!info) {
+            continue;
+        }
+        if (info.email) {
+            baseRecord.email = info.email;
+        }
+        if (info.recapito_telefonico) {
+            baseRecord.recapito_telefonico = info.recapito_telefonico;
+        }
     }
 
     const connection = await mysql.createConnection({
