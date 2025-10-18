@@ -725,8 +725,34 @@ document.addEventListener('DOMContentLoaded', () => {
   if (insertForm) enterNewMode();
   const initialDays = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15;
   loadExpiring(initialDays, 1);
+  setupLiveReload();
   
 });
 
+function setupLiveReload() {
+  if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
+  let reconnectAttempts = 0;
+  let reloading = false;
+
+  const connect = () => {
+    const es = new EventSource('/api/live-reload');
+    es.onopen = () => {
+      if (reconnectAttempts > 0 && !reloading) {
+        reloading = true;
+        window.location.reload();
+      }
+      reconnectAttempts = 0;
+    };
+    es.onerror = () => {
+      es.close();
+      if (reloading) return;
+      reconnectAttempts += 1;
+      const delay = Math.min(1000 * 2 ** reconnectAttempts, 10000);
+      setTimeout(connect, delay);
+    };
+  };
+
+  connect();
+}
 
 

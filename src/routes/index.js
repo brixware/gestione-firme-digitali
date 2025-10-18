@@ -553,6 +553,22 @@ router.get('/signatures/stats/renewals/yearly', async (req, res) => {
     }
 });
 
+router.get('/live-reload', (req, res) => {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+
+    res.write('retry: 3000\n\n');
+    const keepAlive = setInterval(() => {
+        res.write(`data: ${Date.now()}\n\n`);
+    }, 15000);
+
+    req.on('close', () => {
+        clearInterval(keepAlive);
+    });
+});
+
 // GET /api/signatures/:id (dettaglio semplice)
 router.get('/signatures/:id', async (req, res) => {
     try {
