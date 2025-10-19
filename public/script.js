@@ -1211,7 +1211,7 @@ const fmt = {
   const initialDays = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15;
   loadExpiring(initialDays, 1);
   setupLiveReload();
-
+  app.ensureSession();
 
 
 

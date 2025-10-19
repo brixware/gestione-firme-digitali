@@ -1,26 +1,26 @@
 {
-    "name":  "gestione-firme-digitali",
-    "version":  "1.0.0",
-    "description":  "Progetto per caricare dati da un file XLS in un database MySQL.",
-    "main":  "src/app.js",
-    "scripts":  {
-                    "start":  "node src/app.js",
-                    "dev":  "nodemon src/app.js",
-                    "db:setup":  "node scripts/createTables.js",
-                    "db:test":  "node scripts/testConnection.js"
-                },
-    "dependencies":  {
-                         "express":  "^4.17.1",
-                         "multer":  "^1.4.5-lts.1",
-                         "mysql2":  "^2.2.5",
-                         "xlsx":  "^0.17.0",
-                         "dotenv":  "^10.0.0",
-                         "express-session":  "^1.17.3",
-                         "bcrypt":  "^5.1.0"
-                     },
-    "devDependencies":  {
-                            "nodemon":  "^2.0.7"
-                        },
-    "author":  "Il tuo nome",
-    "license":  "MIT"
+    "name": "gestione-firme-digitali",
+    "version": "1.0.0",
+    "description": "Progetto per caricare dati da un file XLS in un database MySQL.",
+    "main": "src/app.js",
+    "scripts": {
+        "start": "node src/app.js",
+        "dev": "nodemon src/app.js",
+        "db:setup": "node scripts/createTables.js",
+        "db:test": "node scripts/testConnection.js"
+    },
+    "dependencies": {
+        "bcrypt": "^5.1.0",
+        "dotenv": "^10.0.0",
+        "express": "^4.17.1",
+        "express-session": "^1.18.2",
+        "multer": "^1.4.5-lts.1",
+        "mysql2": "^2.2.5",
+        "xlsx": "^0.17.0"
+    },
+    "devDependencies": {
+        "nodemon": "^2.0.7"
+    },
+    "author": "Il tuo nome",
+    "license": "MIT"
 }
