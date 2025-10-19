@@ -158,10 +158,11 @@
                             <label for="profile-full-name">Nome completo</label>
                             <input type="text" id="profile-full-name" autocomplete="name" placeholder="Es. Mario Rossi">
 
-                            <label for="profile-avatar-url">Immagine profilo</label>
+                            <label for="profile-avatar-upload">Immagine profilo</label>
                             <div class="profile-avatar-actions">
+                                <input type="hidden" id="profile-avatar-url">
                                 <div class="avatar-url-row">
-                                    <input type="text" id="profile-avatar-url" autocomplete="off" placeholder="https://...">
+                                    <span id="profile-avatar-status" class="avatar-status muted">Nessuna immagine caricata</span>
                                     <button type="button" id="profile-avatar-clear" class="btn btn-ghost" title="Rimuovi immagine">Rimuovi</button>
                                 </div>
                                 <div class="avatar-upload-row">

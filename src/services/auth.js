@@ -16,6 +16,8 @@ const ensureUsersTable = async () => {
             must_change_password TINYINT(1) NOT NULL DEFAULT 0,
             full_name VARCHAR(150) NULL,
             avatar_url VARCHAR(255) NULL,
+            avatar_data LONGBLOB NULL,
+            avatar_mime VARCHAR(100) NULL,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NULL DEFAULT NULL
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci`
@@ -67,6 +69,8 @@ const ensureAuthSetup = async () => {
     await ensureUsersTable();
     await ensureColumn('full_name', 'full_name VARCHAR(150) NULL AFTER must_change_password');
     await ensureColumn('avatar_url', 'avatar_url VARCHAR(255) NULL AFTER full_name');
+    await ensureColumn('avatar_data', 'avatar_data LONGBLOB NULL AFTER avatar_url');
+    await ensureColumn('avatar_mime', 'avatar_mime VARCHAR(100) NULL AFTER avatar_data');
     await ensureColumn(
         'updated_at',
         'updated_at TIMESTAMP NULL DEFAULT NULL'
@@ -102,12 +106,15 @@ const updateUserPassword = async (id, newPassword, { requireChangeFlag = false }
     );
 };
 
-const updateUserProfile = async (id, { fullName = null, avatarUrl = null } = {}) => {
+const updateUserProfile = async (
+    id,
+    { fullName = null, avatarData = null, avatarMime = null } = {}
+) => {
     await db.pool.query(
         `UPDATE \`${USERS_TABLE}\`
-         SET full_name = ?, avatar_url = ?, updated_at = NOW()
+         SET full_name = ?, avatar_url = NULL, avatar_data = ?, avatar_mime = ?, updated_at = NOW()
          WHERE id = ?`,
-        [fullName || null, avatarUrl || null, id]
+        [fullName || null, avatarData ?? null, avatarMime ?? null, id]
     );
 };
 

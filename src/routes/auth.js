@@ -1,6 +1,6 @@
 const express = require('express');
-const path = require('path');
 const fs = require('fs');
+const path = require('path');
 const multer = require('multer');
 const {
     getUserByUsername,
@@ -13,30 +13,25 @@ const {
 const router = express.Router();
 
 const uploadDirName = process.env.UPLOAD_DIR || 'uploads';
-const avatarsDir = path.resolve(__dirname, '..', '..', uploadDirName, 'avatars');
+const uploadsRoot = path.resolve(__dirname, '..', '..', uploadDirName);
 const AVATAR_MAX_SIZE = parseInt(process.env.AVATAR_MAX_SIZE || '2097152', 10);
-const ALLOWED_AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/pjpeg', 'image/gif', 'image/webp']);
-
-if (!fs.existsSync(avatarsDir)) {
-    fs.mkdirSync(avatarsDir, { recursive: true });
-}
-
-const avatarStorage = multer.diskStorage({
-    destination: (_req, _file, cb) => {
-        cb(null, avatarsDir);
-    },
-    filename: (req, file, cb) => {
-        const rawExt = path.extname(file.originalname || '').toLowerCase();
-        const allowedExt = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
-        const safeExt = allowedExt.has(rawExt) ? rawExt : '.png';
-        const suffix = Math.random().toString(16).slice(2, 10);
-        const userId = req.session?.userId || 'user';
-        cb(null, `avatar-${userId}-${Date.now()}-${suffix}${safeExt}`);
-    }
-});
+const ALLOWED_AVATAR_TYPES = new Set([
+    'image/png',
+    'image/jpeg',
+    'image/pjpeg',
+    'image/gif',
+    'image/webp'
+]);
+const EXTENSION_MIME_MAP = new Map([
+    ['.png', 'image/png'],
+    ['.jpg', 'image/jpeg'],
+    ['.jpeg', 'image/jpeg'],
+    ['.gif', 'image/gif'],
+    ['.webp', 'image/webp']
+]);
 
 const avatarUpload = multer({
-    storage: avatarStorage,
+    storage: multer.memoryStorage(),
     limits: { fileSize: AVATAR_MAX_SIZE },
     fileFilter: (_req, file, cb) => {
         if (!ALLOWED_AVATAR_TYPES.has(file.mimetype)) {
@@ -58,32 +53,70 @@ const runAvatarUpload = (req, res, next) =>
     avatarUpload.single('avatar')(req, res, (err) => {
         if (!err) return next();
         if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ message: 'L\'immagine è troppo grande. Dimensione massima: 2 MB.' });
+            return res
+                .status(400)
+                .json({ message: 'L\'immagine e\' troppo grande. Dimensione massima: 2 MB.' });
         }
         return res
             .status(400)
             .json({ message: err?.message || 'Errore durante il caricamento dell\'immagine.' });
     });
 
-const toRelativeAvatarUrl = (filename) =>
-    `/${uploadDirName}/avatars/${filename}`.replace(/\\/g, '/');
+const buildAvatarDataUrl = (mime, buffer) => {
+    if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null;
+    const safeMime = typeof mime === 'string' && mime.trim().length > 0 ? mime.trim() : 'image/png';
+    const base64 = buffer.toString('base64');
+    return 'data:' + safeMime + ';base64,' + base64;
+};
 
-const removeAvatarFile = (url) => {
-    if (!url || typeof url !== 'string') return;
-    const normalized = url.trim();
-    const expectedPrefix = `/${uploadDirName}/avatars/`;
-    if (!normalized.startsWith(expectedPrefix)) return;
-    const absolutePath = path.resolve(
-        __dirname,
-        '..',
-        '..',
-        normalized.replace(/^\//, '')
-    );
-    fs.unlink(absolutePath, (error) => {
-        if (error && error.code !== 'ENOENT') {
-            console.error('Errore durante la rimozione del vecchio avatar:', error);
+const parseAvatarDataUrl = (value) => {
+    if (value == null) return { buffer: null, mime: null };
+    if (typeof value !== 'string' || value.trim() === '') {
+        return { buffer: null, mime: null };
+    }
+    const trimmed = value.trim();
+    const match = trimmed.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+        throw new Error('Formato immagine non valido.');
+    }
+    const mime = match[1];
+    if (!ALLOWED_AVATAR_TYPES.has(mime)) {
+        throw new Error('Formato immagine non supportato. Usa PNG, JPG, GIF o WebP.');
+    }
+    try {
+        const buffer = Buffer.from(match[2], 'base64');
+        if (buffer.length > AVATAR_MAX_SIZE) {
+            throw new Error('L\'immagine e\' troppo grande. Dimensione massima: 2 MB.');
         }
-    });
+        return { buffer, mime };
+    } catch (error) {
+        throw new Error('Immagine non valida.');
+    }
+};
+
+const loadLegacyAvatarDataUrl = (avatarPath) => {
+    if (!avatarPath || typeof avatarPath !== 'string') return null;
+    const normalized = avatarPath.replace(/^\/+/, '');
+    const absolute = path.resolve(__dirname, '..', '..', normalized);
+    if (!absolute.toLowerCase().startsWith(uploadsRoot.toLowerCase())) return null;
+    try {
+        const buffer = fs.readFileSync(absolute);
+        const ext = path.extname(absolute).toLowerCase();
+        const mime = EXTENSION_MIME_MAP.get(ext) || 'image/png';
+        return buildAvatarDataUrl(mime, buffer);
+    } catch (error) {
+        return null;
+    }
+};
+
+const extractAvatarDataUrl = (user) => {
+    if (user?.avatar_data && user.avatar_data.length) {
+        return buildAvatarDataUrl(user.avatar_mime || 'image/png', user.avatar_data);
+    }
+    if (user?.avatar_url) {
+        return loadLegacyAvatarDataUrl(user.avatar_url);
+    }
+    return null;
 };
 
 const regenerateSession = (req) =>
@@ -95,12 +128,22 @@ router.get('/session', async (req, res) => {
     if (!req.session.userId) {
         return res.json({ authenticated: false });
     }
+    let avatarDataUrl = req.session.avatarUrl || null;
+    if (!avatarDataUrl) {
+        try {
+            const user = await getUserById(req.session.userId);
+            avatarDataUrl = extractAvatarDataUrl(user) || null;
+            if (avatarDataUrl) req.session.avatarUrl = avatarDataUrl;
+        } catch (error) {
+            console.error('Errore recupero avatar sessione:', error);
+        }
+    }
     res.json({
         authenticated: true,
         username: req.session.username,
         mustChangePassword: Boolean(req.session.mustChangePassword),
         fullName: req.session.fullName || null,
-        avatarUrl: req.session.avatarUrl || null
+        avatarUrl: avatarDataUrl
     });
 });
 
@@ -126,13 +169,14 @@ router.post('/login', async (req, res) => {
         req.session.username = user.username;
         req.session.mustChangePassword = Boolean(user.must_change_password);
         req.session.fullName = user.full_name || null;
-        req.session.avatarUrl = user.avatar_url || null;
+        const avatarDataUrl = extractAvatarDataUrl(user);
+        req.session.avatarUrl = avatarDataUrl;
 
         res.json({
             message: 'Autenticato.',
             mustChangePassword: Boolean(user.must_change_password),
             fullName: user.full_name || null,
-            avatarUrl: user.avatar_url || null
+            avatarUrl: avatarDataUrl || null
         });
     } catch (error) {
         console.error('Errore login:', error);
@@ -194,8 +238,11 @@ router.post('/profile/avatar', ensureAuthenticated, runAvatarUpload, (req, res) 
     if (!req.file) {
         return res.status(400).json({ message: 'Nessun file caricato.' });
     }
-    const relativeUrl = toRelativeAvatarUrl(req.file.filename);
-    res.json({ message: 'Immagine caricata.', url: relativeUrl });
+    const dataUrl = buildAvatarDataUrl(req.file.mimetype, req.file.buffer);
+    if (!dataUrl) {
+        return res.status(400).json({ message: 'Immagine non valida.' });
+    }
+    res.json({ message: 'Immagine caricata.', dataUrl });
 });
 
 router.get('/profile', async (req, res) => {
@@ -207,10 +254,14 @@ router.get('/profile', async (req, res) => {
         if (!user) {
             return res.status(404).json({ message: 'Utente non trovato.' });
         }
+        const avatarDataUrl = extractAvatarDataUrl(user);
+        if (avatarDataUrl && !req.session.avatarUrl) {
+            req.session.avatarUrl = avatarDataUrl;
+        }
         res.json({
             username: user.username,
             fullName: user.full_name || '',
-            avatarUrl: user.avatar_url || ''
+            avatarUrl: avatarDataUrl || ''
         });
     } catch (error) {
         console.error('Errore profilo:', error);
@@ -228,22 +279,23 @@ router.put('/profile', async (req, res) => {
             typeof fullName === 'string' && fullName.trim().length > 0
                 ? fullName.trim()
                 : null;
-        const cleanAvatar =
-            typeof avatarUrl === 'string' && avatarUrl.trim().length > 0
-                ? avatarUrl.trim()
-                : null;
-        const previousAvatar = req.session.avatarUrl || null;
+        const rawAvatar = typeof avatarUrl === 'string' ? avatarUrl.trim() : '';
+        let avatarBuffer = null;
+        let avatarMime = null;
+        if (rawAvatar) {
+            const parsed = parseAvatarDataUrl(rawAvatar);
+            avatarBuffer = parsed.buffer;
+            avatarMime = parsed.mime;
+        }
 
         await updateUserProfile(req.session.userId, {
             fullName: cleanFullName,
-            avatarUrl: cleanAvatar
+            avatarData: avatarBuffer,
+            avatarMime
         });
 
         req.session.fullName = cleanFullName;
-        req.session.avatarUrl = cleanAvatar;
-        if (previousAvatar && previousAvatar !== cleanAvatar) {
-            removeAvatarFile(previousAvatar);
-        }
+        req.session.avatarUrl = avatarBuffer ? buildAvatarDataUrl(avatarMime, avatarBuffer) : null;
 
         res.json({ message: 'Profilo aggiornato.' });
     } catch (error) {
@@ -253,4 +305,3 @@ router.put('/profile', async (req, res) => {
 });
 
 module.exports = router;
-

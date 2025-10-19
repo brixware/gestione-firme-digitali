@@ -462,8 +462,17 @@ button:active { transform: translateY(1px); }
 .profile-form { display: flex; flex-direction: column; gap: 12px; }
 .profile-form input { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--field-border); background: var(--field); box-shadow: var(--field-shadow); color: var(--text); }
 .profile-avatar-actions { display: flex; flex-direction: column; gap: 10px; }
-.profile-avatar-actions .avatar-url-row { display: flex; gap: 8px; align-items: center; }
-.profile-avatar-actions .avatar-url-row input { flex: 1 1 auto; }
+.profile-avatar-actions .avatar-url-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.profile-avatar-actions .avatar-status {
+  flex: 1 1 auto;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+.profile-avatar-actions .avatar-status.has-image {
+  color: var(--text);
+  font-weight: 600;
+}
 .profile-avatar-actions .avatar-upload-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .profile-avatar-actions .avatar-upload-row .btn { flex-shrink: 0; }
 .profile-avatar-actions .input-hint { font-size: 12px; color: var(--muted); }

@@ -13,7 +13,6 @@ const PORT = process.env.PORT || 3000;
 const uploadDirName = process.env.UPLOAD_DIR || 'uploads';
 const uploadsDir = path.join(__dirname, '..', uploadDirName);
 const staticMiddleware = express.static(path.join(__dirname, '..', 'public'));
-const uploadsStaticMiddleware = express.static(uploadsDir);
 
 if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
@@ -72,7 +71,6 @@ app.get('/', ensurePageAuthenticated, (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-app.use('/uploads', ensurePageAuthenticated, uploadsStaticMiddleware);
 app.use(ensurePageAuthenticated, staticMiddleware);
 
 ensureAuthSetup()

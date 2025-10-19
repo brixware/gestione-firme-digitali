@@ -268,6 +268,7 @@ const fmt = {
   const profileCurrentPasswordInput = document.getElementById('profile-current-password');
   const profileNewPasswordInput = document.getElementById('profile-new-password');
   const profileConfirmPasswordInput = document.getElementById('profile-confirm-password');
+  const profileAvatarStatus = document.getElementById('profile-avatar-status');
   const profileAvatarFileInput = document.getElementById('profile-avatar-file');
   const profileAvatarUploadBtn = document.getElementById('profile-avatar-upload');
   const profileAvatarClearBtn = document.getElementById('profile-avatar-clear');
@@ -288,23 +289,39 @@ const fmt = {
     const baseUser = getSafeCurrentUser();
     app.currentUser = { ...baseUser, avatarUrl: cleanUrl || null };
     app.updateProfileHeader(app.currentUser);
+    updateAvatarStatus(cleanUrl);
   };
 
   const showProfileInfoStatus = (text, type = 'info') => {
     setFormMessage(profileInfoMsg, text, type);
   };
 
-  let avatarPreviewTimer;
-  const scheduleAvatarPreview = () => {
-    if (!profileAvatarInput) return;
-    clearTimeout(avatarPreviewTimer);
-    avatarPreviewTimer = setTimeout(() => {
-      applyAvatarUrl(profileAvatarInput.value);
-    }, 400);
+  const updateAvatarStatus = (dataUrl) => {
+    if (!profileAvatarStatus) return;
+    if (!dataUrl) {
+      profileAvatarStatus.textContent = 'Nessuna immagine caricata';
+      profileAvatarStatus.classList.remove('has-image');
+      profileAvatarStatus.classList.add('muted');
+      return;
+    }
+    const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (!match) {
+      profileAvatarStatus.textContent = 'Immagine personalizzata';
+      profileAvatarStatus.classList.add('has-image');
+      profileAvatarStatus.classList.remove('muted');
+      return;
+    }
+    const mime = match[1];
+    const payload = match[2];
+    const padding = payload.endsWith('==') ? 2 : payload.endsWith('=') ? 1 : 0;
+    const byteLength = Math.max(0, Math.floor(payload.length * 0.75) - padding);
+    const humanSize = byteLength >= 1024 * 1024
+      ? `${(byteLength / (1024 * 1024)).toFixed(2)} MB`
+      : `${(byteLength / 1024).toFixed(1)} KB`;
+    profileAvatarStatus.textContent = `Immagine pronta (${mime}, ${humanSize})`;
+    profileAvatarStatus.classList.add('has-image');
+    profileAvatarStatus.classList.remove('muted');
   };
-
-  profileAvatarInput?.addEventListener('input', scheduleAvatarPreview);
-  profileAvatarInput?.addEventListener('blur', () => applyAvatarUrl(profileAvatarInput.value));
 
   profileAvatarClearBtn?.addEventListener('click', () => {
     applyAvatarUrl('');
@@ -338,10 +355,10 @@ const fmt = {
         body: formData
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.url) {
+      if (!res.ok || !data?.dataUrl) {
         throw new Error(data?.message || 'Errore durante il caricamento dell\'immagine.');
       }
-      applyAvatarUrl(data.url);
+      applyAvatarUrl(data.dataUrl);
       showProfileInfoStatus('Immagine caricata. Ricorda di salvare per confermare.', 'success');
     } catch (error) {
       console.error('Errore caricamento avatar:', error);
@@ -757,7 +774,7 @@ const fmt = {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data?.message || 'Errore durante l\'aggiornamento del profilo.');
       app.currentUser = { ...app.currentUser, fullName, avatarUrl };
-      app.updateProfileHeader(app.currentUser);
+      applyAvatarUrl(avatarUrl);
       app.initPasswordToggles(profileView);
       setFormMessage(profileInfoMsg, 'Profilo aggiornato.','success');
     } catch (error) {
@@ -815,8 +832,6 @@ const fmt = {
       const fullName = data.fullName || '';
       const avatarUrl = data.avatarUrl || '';
       if (profileFullNameInput) profileFullNameInput.value = fullName;
-      if (profileAvatarInput) profileAvatarInput.value = avatarUrl;
-      clearTimeout(avatarPreviewTimer);
       if (profileCurrentPasswordInput) profileCurrentPasswordInput.value = '';
       if (profileNewPasswordInput) profileNewPasswordInput.value = '';
       if (profileConfirmPasswordInput) profileConfirmPasswordInput.value = '';
@@ -828,7 +843,7 @@ const fmt = {
         fullName,
         avatarUrl
       };
-      app.updateProfileHeader(app.currentUser);
+      applyAvatarUrl(avatarUrl);
       app.initPasswordToggles(profileView);
     } catch (error) {
       console.error('Errore profilo:', error);
