@@ -40,6 +40,24 @@
             </div>
         </aside>
 
+        <header class="topbar">
+            <div class="topbar-inner">
+                <div class="topbar-actions">
+                    <a href="#" class="topbar-link" id="topbar-profile-link" data-view="profile-view" aria-label="Vai al profilo">
+                        <span class="topbar-avatar">
+                            <img id="topbar-avatar-img" alt="Avatar profilo">
+                            <span id="topbar-avatar-initial" class="topbar-avatar-initial">P</span>
+                        </span>
+                        <span class="topbar-profile-info">
+                            <span id="topbar-profile-name" class="topbar-profile-name">Profilo</span>
+                            <small id="topbar-profile-username" class="topbar-profile-username"></small>
+                        </span>
+                    </a>
+                    <button type="button" id="logout-btn" class="btn btn-secondary">Esci</button>
+                </div>
+            </div>
+        </header>
+
         <main class="content">
             <section id="dashboard-view" class="view active">
                 <h1>Dashboard</h1>
@@ -118,6 +136,70 @@
                         <h2 class="card-title">Firme non pagate</h2>
                         <p id="report-unpaid-count" class="stat-value">-</p>
                         <p class="muted">Firme prive di registrazione pagamento.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section id="profile-view" class="view">
+                <h1>Profilo utente</h1>
+                <div class="profile-grid">
+                    <div class="card profile-card">
+                        <div class="profile-header">
+                            <div class="profile-avatar">
+                                <img id="profile-avatar-img" alt="Avatar" />
+                                <span id="profile-avatar-initial">U</span>
+                            </div>
+                            <div>
+                                <h2 id="profile-fullname">-</h2>
+                                <p id="profile-username" class="muted">@utente</p>
+                            </div>
+                        </div>
+                        <form id="profile-info-form" class="profile-form">
+                            <label for="profile-full-name">Nome completo</label>
+                            <input type="text" id="profile-full-name" autocomplete="name" placeholder="Es. Mario Rossi">
+
+                            <label for="profile-avatar-url">Immagine profilo</label>
+                            <div class="profile-avatar-actions">
+                                <div class="avatar-url-row">
+                                    <input type="text" id="profile-avatar-url" autocomplete="off" placeholder="https://...">
+                                    <button type="button" id="profile-avatar-clear" class="btn btn-ghost" title="Rimuovi immagine">Rimuovi</button>
+                                </div>
+                                <div class="avatar-upload-row">
+                                    <input type="file" id="profile-avatar-file" accept="image/*" class="sr-only">
+                                    <button type="button" id="profile-avatar-upload" class="btn btn-ghost">Carica da file</button>
+                                    <small class="input-hint">PNG, JPG, GIF o WebP - max 2 MB</small>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn">Salva informazioni</button>
+                            <div id="profile-info-msg" class="form-message"></div>
+                        </form>
+                    </div>
+                    <div class="card profile-card">
+                        <h2 class="card-title">Modifica password</h2>
+                        <form id="profile-password-form" class="profile-form">
+                            <label for="profile-current-password">Password attuale</label>
+                            <div class="password-toggle-wrap">
+                                <input type="password" id="profile-current-password" autocomplete="current-password" required>
+                                <button type="button" class="password-toggle" data-toggle-password="profile-current-password">👁</button>
+                            </div>
+
+                            <label for="profile-new-password">Nuova password</label>
+                            <div class="password-toggle-wrap">
+                                <input type="password" id="profile-new-password" autocomplete="new-password" required>
+                                <button type="button" class="password-toggle" data-toggle-password="profile-new-password">👁</button>
+                            </div>
+                            <small class="muted">Almeno 10 caratteri e diversa da quella attuale.</small>
+
+                            <label for="profile-confirm-password">Conferma nuova password</label>
+                            <div class="password-toggle-wrap">
+                                <input type="password" id="profile-confirm-password" autocomplete="new-password" required>
+                                <button type="button" class="password-toggle" data-toggle-password="profile-confirm-password">👁</button>
+                            </div>
+
+                            <button type="submit" class="btn">Aggiorna password</button>
+                            <div id="profile-password-msg" class="form-message"></div>
+                        </form>
                     </div>
                 </div>
             </section>

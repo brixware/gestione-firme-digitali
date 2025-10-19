@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Accesso | Gestione Firme Digitali</title>
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #0b5fad 0%, #f36c21 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      color: #0f172a;
+    }
+    .card {
+      width: min(420px, 100%);
+      background: #ffffff;
+      border-radius: 18px;
+      box-shadow: 0 32px 80px -32px rgba(15, 23, 42, 0.35);
+      padding: 32px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      color: #0b5fad;
+    }
+    p.subtitle {
+      margin: 0;
+      color: #475569;
+      font-size: 15px;
+    }
+    form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    label {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 14px;
+      color: #1e293b;
+    }
+    input[type="text"],
+    input[type="password"] {
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid #cbd5f5;
+      background: #f8fbff;
+      font-size: 15px;
+      transition: border-color .15s ease, box-shadow .15s ease;
+    }
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #0b5fad;
+      box-shadow: 0 0 0 3px rgba(11, 95, 173, 0.18);
+      background: #ffffff;
+    }
+    button {
+      padding: 12px;
+      border-radius: 10px;
+      border: none;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform .1s ease, box-shadow .1s ease, background .1s ease;
+    }
+    button.primary {
+      background: linear-gradient(135deg, #0b5fad, #0b6fd1);
+      color: #ffffff;
+      box-shadow: 0 16px 32px -18px rgba(11, 95, 173, 0.55);
+    }
+    button.primary:hover { transform: translateY(-1px); box-shadow: 0 18px 34px -16px rgba(11,95,173,.6); }
+    button.secondary {
+      background: #f8fafc;
+      color: #0b5fad;
+      border: 1px solid rgba(11, 95, 173, 0.2);
+    }
+    .password-field {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .password-field input {
+      padding-right: 44px;
+      width: 100%;
+    }
+    .toggle-password {
+      position: absolute;
+      right: 10px;
+      background: transparent;
+      border: none;
+      color: #0b5fad;
+      cursor: pointer;
+      font-size: 14px;
+      padding: 4px;
+    }
+    .toggle-password:focus-visible {
+      outline: 2px solid rgba(11,95,173,.4);
+      border-radius: 6px;
+    }
+    .message {
+      font-size: 14px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(11, 95, 173, 0.08);
+      color: #0b5fad;
+      display: none;
+    }
+    .message.error { background: rgba(239, 68, 68, 0.12); color: #b91c1c; }
+    .message.success { background: rgba(16, 185, 129, 0.12); color: #047857; }
+    .hidden { display: none !important; }
+    .actions { display: flex; flex-direction: column; gap: 12px; }
+    small.hint { color: #64748b; font-size: 13px; }
+    @media (max-width: 480px) {
+      .card { padding: 24px; }
+      h1 { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div>
+      <h1>Gestione Firme</h1>
+      <p class="subtitle">Accedi con le tue credenziali</p>
+    </div>
+
+    <div id="login-section">
+      <form id="login-form">
+        <label>
+          Utente
+          <input type="text" id="username" name="username" autocomplete="username" autofocus required>
+        </label>
+        <label>
+          Password
+          <span class="password-field">
+            <input type="password" id="password" name="password" autocomplete="current-password" required>
+            <button type="button" class="toggle-password" data-target="password">👁</button>
+          </span>
+        </label>
+        <div class="actions">
+          <button type="submit" class="primary">Accedi</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="change-section" class="hidden">
+      <p class="subtitle">È necessario impostare una nuova password prima di proseguire.</p>
+      <form id="change-form">
+        <label>
+          Password attuale
+          <span class="password-field">
+            <input type="password" id="current-password" autocomplete="current-password" required>
+            <button type="button" class="toggle-password" data-target="current-password">👁</button>
+          </span>
+        </label>
+        <label>
+          Nuova password
+          <span class="password-field">
+            <input type="password" id="new-password" autocomplete="new-password" required>
+            <button type="button" class="toggle-password" data-target="new-password">👁</button>
+          </span>
+          <small class="hint">Almeno 10 caratteri.</small>
+        </label>
+        <label>
+          Conferma nuova password
+          <span class="password-field">
+            <input type="password" id="confirm-password" autocomplete="new-password" required>
+            <button type="button" class="toggle-password" data-target="confirm-password">👁</button>
+          </span>
+        </label>
+        <div class="actions">
+          <button type="submit" class="primary">Aggiorna password</button>
+          <button type="button" id="cancel-change" class="secondary">Torna al login</button>
+        </div>
+      </form>
+    </div>
+
+    <div id="message" class="message"></div>
+  </div>
+
+  <script>
+    const loginForm = document.getElementById('login-form');
+    const changeForm = document.getElementById('change-form');
+    const loginSection = document.getElementById('login-section');
+    const changeSection = document.getElementById('change-section');
+    const messageBox = document.getElementById('message');
+    const cancelChangeBtn = document.getElementById('cancel-change');
+
+    const showMessage = (text, type = 'info') => {
+      messageBox.textContent = text || '';
+      messageBox.className = 'message';
+      if (text) {
+        if (type === 'error') messageBox.classList.add('error');
+        if (type === 'success') messageBox.classList.add('success');
+        messageBox.style.display = 'block';
+      } else {
+        messageBox.style.display = 'none';
+      }
+    };
+
+    const showChangePassword = () => {
+      loginSection.classList.add('hidden');
+      changeSection.classList.remove('hidden');
+      showMessage('Inserisci la password temporanea e scegline una nuova.', 'info');
+      document.getElementById('current-password').focus();
+    };
+
+    const showLogin = () => {
+      changeSection.classList.add('hidden');
+      loginSection.classList.remove('hidden');
+      showMessage('');
+      document.getElementById('password').value = '';
+      document.getElementById('password').focus();
+    };
+
+    const runReset = async (target) => {
+      try {
+        const res = await fetch('/api/auth/ensure-default', { method: 'POST' });
+        await res.json().catch(() => ({}));
+        target.disabled = true;
+        setTimeout(() => { target.disabled = false; }, 1500);
+      } catch (error) {
+        console.error('Errore reset temporaneo:', error);
+      }
+    };
+
+    cancelChangeBtn.addEventListener('click', () => {
+      showLogin();
+    });
+
+    const toggleButtons = Array.from(document.querySelectorAll('.toggle-password'));
+    toggleButtons.forEach((btn) => {
+      const input = document.getElementById(btn.dataset.target);
+      if (!input) return;
+      btn.addEventListener('click', () => {
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+        btn.textContent = isHidden ? '🙈' : '👁';
+      });
+    });
+
+    loginForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      showMessage('Verifica credenziali...');
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: document.getElementById('username').value.trim(),
+            password: document.getElementById('password').value
+          })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(data?.message || 'Accesso non riuscito.', 'error');
+          return;
+        }
+        if (data.mustChangePassword) {
+          showChangePassword();
+        } else {
+          showMessage('Accesso effettuato, reindirizzamento...', 'success');
+          window.location.href = '/';
+        }
+      } catch (error) {
+        console.error(error);
+        showMessage('Errore durante il login.', 'error');
+      }
+    });
+
+    changeForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      showMessage('Aggiornamento password...');
+      const currentPassword = document.getElementById('current-password').value;
+      const newPassword = document.getElementById('new-password').value;
+      const confirmPassword = document.getElementById('confirm-password').value;
+      if (newPassword !== confirmPassword) {
+        showMessage('Le password non coincidono.', 'error');
+        return;
+      }
+      if (newPassword.length < 10) {
+        showMessage('La nuova password deve contenere almeno 10 caratteri.', 'error');
+        return;
+      }
+      try {
+        const res = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ currentPassword, newPassword })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          showMessage(data?.message || 'Impossibile aggiornare la password.', 'error');
+          return;
+        }
+        showMessage('Password aggiornata. Reindirizzamento...', 'success');
+        setTimeout(() => { window.location.href = '/'; }, 600);
+      } catch (error) {
+        console.error(error);
+        showMessage('Errore durante l\'aggiornamento della password.', 'error');
+      }
+    });
+
+    const ensureSession = async () => {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const changeRequested = params.get('change') === '1';
+        
+        const res = await fetch('/api/auth/session');
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error('Errore sessione');
+        
+        if (data.authenticated) {
+          if (data.mustChangePassword || changeRequested) {
+            showChangePassword();
+          } else {
+            window.location.href = '/';
+          }
+          return;
+        }
+      } catch (error) {
+        // Utente non autenticato, resta nella pagina di login
+      }
+    };
+
+    ensureSession();
+  </script>
+</body>
+</html>

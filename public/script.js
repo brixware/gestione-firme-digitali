@@ -1,7 +1,179 @@
-document.addEventListener('DOMContentLoaded', () => {
-  // Utils
-  const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
-  const fmt = {
+// Stato globale e funzioni di utility
+const app = {
+  currentUser: null,
+
+  // Utility per gestire il profilo utente
+  updateProfileHeader(user = {}) {
+    const elements = {
+      fullName: document.getElementById('profile-fullname'),
+      username: document.getElementById('profile-username'),
+      avatarImg: document.getElementById('profile-avatar-img'),
+      avatarInitial: document.getElementById('profile-avatar-initial'),
+      topName: document.getElementById('topbar-profile-name'),
+      topUsername: document.getElementById('topbar-profile-username'),
+      topAvatarImg: document.getElementById('topbar-avatar-img'),
+      topAvatarInitial: document.getElementById('topbar-avatar-initial'),
+      topLink: document.getElementById('topbar-profile-link')
+    };
+
+    const username = user.username || this.currentUser?.username || '';
+    const fullName = user.fullName || this.currentUser?.fullName || '';
+    const avatarUrl = user.avatarUrl || this.currentUser?.avatarUrl || '';
+    const hasIdentity = Boolean(fullName || username);
+    const displayName = hasIdentity ? (fullName || username) : 'Profilo';
+    const initial = (fullName || username || 'P').charAt(0).toUpperCase();
+
+    if (elements.fullName) elements.fullName.textContent = fullName || username || '-';
+    if (elements.username) elements.username.textContent = username ? `@${username}` : '';
+
+    const setAvatar = (imgEl, initialEl) => {
+      if (!imgEl || !initialEl) return;
+      if (avatarUrl) {
+        imgEl.src = avatarUrl;
+        imgEl.classList.add('visible');
+        initialEl.style.display = 'none';
+      } else {
+        imgEl.src = '';
+        imgEl.classList.remove('visible');
+        initialEl.textContent = initial;
+        initialEl.style.display = 'block';
+      }
+    };
+
+    setAvatar(elements.avatarImg, elements.avatarInitial);
+    setAvatar(elements.topAvatarImg, elements.topAvatarInitial);
+
+    if (elements.topName) elements.topName.textContent = displayName;
+    if (elements.topUsername) elements.topUsername.textContent = username ? `@${username}` : '';
+    if (elements.topLink) {
+      const linkTitle = hasIdentity ? `Apri profilo di ${displayName}` : 'Apri profilo';
+      elements.topLink.setAttribute('title', linkTitle);
+      elements.topLink.setAttribute('aria-label', linkTitle);
+    }
+  },
+
+  // Gestione toggle password
+  initPasswordToggles(container = document) {
+    if (!container) return;
+    const buttons = container.querySelectorAll('[data-toggle-password]');
+    buttons.forEach(btn => {
+      if (!btn || btn.dataset.bound === 'true') return;
+      const inputId = btn.dataset.togglePassword;
+      const input = container.querySelector(`#${inputId}`) || document.getElementById(inputId);
+      if (!input) return;
+      btn.dataset.bound = 'true';
+      btn.addEventListener('click', () => {
+        const isHidden = input.type === 'password';
+        input.type = isHidden ? 'text' : 'password';
+        btn.textContent = isHidden ? '🙈' : '👁';
+      });
+    });
+  },
+
+  // Gestione sessione
+  async ensureSession() {
+    try {
+      const res = await fetch('/api/auth/session');
+      const data = await res.json().catch(() => ({}));
+      
+      if (!res.ok || !data.authenticated) {
+        if (window.location.pathname !== '/login') {
+          redirectToLogin('/login');
+        }
+        return;
+      }
+      
+      if (data.mustChangePassword && window.location.pathname !== '/login') {
+        redirectToLogin('/login?change=1');
+        return;
+      }
+      
+      this.currentUser = {
+        username: data.username || '',
+        fullName: data.fullName || '',
+        avatarUrl: data.avatarUrl || ''
+      };
+      
+      document.body.dataset.username = this.currentUser.username || '';
+      this.updateProfileHeader(this.currentUser);
+      
+      const profileView = document.getElementById('profile-view');
+      if (profileView) {
+        this.initPasswordToggles(profileView);
+      }
+      
+      const expDaysSel = document.getElementById('exp-days');
+      if (expDaysSel && typeof loadExpiring === 'function') {
+        const d = parseInt(expDaysSel.value, 10) || 15;
+        loadExpiring(d, 1);
+      }
+    } catch (error) {
+      console.error('Errore verifica sessione:', error);
+      if (window.location.pathname !== '/login') {
+        redirectToLogin('/login');
+      }
+    }
+  }
+};
+
+// Inizializzazione dell'applicazione quando il DOM è pronto
+// Funzioni di utilità globali
+const esc = (s) => (s == null ? '' : String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'));
+
+const redirectToLogin = (target = '/login') => {
+  if (typeof window !== 'undefined' && typeof window.__closeLiveReload === 'function') {
+    try { window.__closeLiveReload(); } catch (_) { /* ignore */ }
+  }
+  window.location.href = target;
+};
+
+// Configurazione live reload
+let liveReloadSource = null;
+function setupLiveReload() {
+  if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
+  let reconnectAttempts = 0;
+  let reloading = false;
+
+  const cleanup = () => {
+    if (liveReloadSource) {
+      liveReloadSource.close();
+      liveReloadSource = null;
+    }
+  };
+
+  if (typeof window.__closeLiveReload === 'function') {
+    window.removeEventListener('beforeunload', window.__closeLiveReload);
+    try { window.__closeLiveReload(); } catch (_) { /* ignore previous errors */ }
+  }
+
+  window.__closeLiveReload = cleanup;
+  window.addEventListener('beforeunload', cleanup);
+
+  const connect = () => {
+    cleanup();
+    const es = new EventSource('/api/live-reload');
+    liveReloadSource = es;
+    es.onopen = () => {
+      if (reconnectAttempts > 0 && !reloading) {
+        reloading = true;
+        window.location.reload();
+      }
+      reconnectAttempts = 0;
+    };
+    es.onerror = () => {
+      es.close();
+      if (reloading || document.readyState === 'unloading') return;
+      reconnectAttempts += 1;
+      const delay = Math.min(1000 * 2 ** reconnectAttempts, 10000);
+      setTimeout(connect, delay);
+    };
+  };
+
+  connect();
+}
+
+// Formattazione
+const fmt = {
     date: (v) => {
       if (!v) return '';
       if (typeof v === 'string') {
@@ -19,12 +191,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Navigation + accordion
   const views = Array.from(document.querySelectorAll('.view'));
-  const topLinks = Array.from(document.querySelectorAll('.nav-link'));
+  const topLinks = Array.from(document.querySelectorAll('.nav-link, .topbar-link'));
   const subLinks = Array.from(document.querySelectorAll('.nav-sublink'));
   const allLinks = topLinks.concat(subLinks);
   const accHeader = document.querySelector('.accordion-header');
   const accPanel = document.querySelector('.accordion-panel');
-  const showView = (id) => {
+  const showView = async (id) => {
     views.forEach((v) => v.classList.toggle('active', v.id === id));
     allLinks.forEach((a) => a.classList.toggle('active', a.getAttribute('data-view') === id));
     if (id === 'signatures-view' || id === 'signature-insert-view' || id === 'signature-renew-view') {
@@ -44,6 +216,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (id === 'reports-view') {
       loadReportSummary();
     }
+    if (id === 'profile-view') {
+      await loadProfile();
+      app.initPasswordToggles(profileView);
+    }
   };
   allLinks.forEach((a) => a.addEventListener('click', (e) => {
     e.preventDefault();
@@ -58,13 +234,147 @@ document.addEventListener('DOMContentLoaded', () => {
     accPanel.hidden = expanded;
   });
 
+  // Dashboard elements
+  const expDaysSel = document.getElementById('exp-days');
+  const expPageSizeSel = document.getElementById('exp-page-size');
+  const expPrevBtn = document.getElementById('exp-prev');
+  const expNextBtn = document.getElementById('exp-next');
+  const expPageInfo = document.getElementById('exp-page-info');
+  const expTotal = document.getElementById('exp-total');
+  const expBadge = document.getElementById('exp-badge');
+  const expiringBody = document.getElementById('expiring-body');
+  const expExportBtn = document.getElementById('exp-export');
+
   // Upload form
   const reportExpiringEl = document.getElementById('report-expiring-count');
   const reportUnpaidEl = document.getElementById('report-unpaid-count');
+  const logoutBtn = document.getElementById('logout-btn');
   const form = document.getElementById('uploadForm');
   const fileInput = document.getElementById('fileInput');
   const messageContainer = document.getElementById('message');
   const setMessage = (text, type = 'info') => { if (!messageContainer) return; messageContainer.textContent = text; messageContainer.className = type; };
+
+  const profileView = document.getElementById('profile-view');
+  const profileInfoForm = document.getElementById('profile-info-form');
+  const profilePasswordForm = document.getElementById('profile-password-form');
+  const profileInfoMsg = document.getElementById('profile-info-msg');
+  const profilePasswordMsg = document.getElementById('profile-password-msg');
+  const profileFullNameEl = document.getElementById('profile-fullname');
+  const profileUsernameEl = document.getElementById('profile-username');
+  const profileAvatarImg = document.getElementById('profile-avatar-img');
+  const profileAvatarInitial = document.getElementById('profile-avatar-initial');
+  const profileFullNameInput = document.getElementById('profile-full-name');
+  const profileAvatarInput = document.getElementById('profile-avatar-url');
+  const profileCurrentPasswordInput = document.getElementById('profile-current-password');
+  const profileNewPasswordInput = document.getElementById('profile-new-password');
+  const profileConfirmPasswordInput = document.getElementById('profile-confirm-password');
+  const profileAvatarFileInput = document.getElementById('profile-avatar-file');
+  const profileAvatarUploadBtn = document.getElementById('profile-avatar-upload');
+  const profileAvatarClearBtn = document.getElementById('profile-avatar-clear');
+  const AVATAR_MAX_SIZE = 2 * 1024 * 1024; // 2 MB
+
+  const getSafeCurrentUser = () => {
+    if (app.currentUser && typeof app.currentUser === 'object') return app.currentUser;
+    const fallbackUsername = document.body?.dataset?.username || '';
+    const fallbackFullName = profileFullNameEl?.textContent || '';
+    return { username: fallbackUsername, fullName: fallbackFullName };
+  };
+
+  const applyAvatarUrl = (nextUrl = '') => {
+    const cleanUrl = typeof nextUrl === 'string' ? nextUrl.trim() : '';
+    if (profileAvatarInput && profileAvatarInput.value !== cleanUrl) {
+      profileAvatarInput.value = cleanUrl;
+    }
+    const baseUser = getSafeCurrentUser();
+    app.currentUser = { ...baseUser, avatarUrl: cleanUrl || null };
+    app.updateProfileHeader(app.currentUser);
+  };
+
+  const showProfileInfoStatus = (text, type = 'info') => {
+    setFormMessage(profileInfoMsg, text, type);
+  };
+
+  let avatarPreviewTimer;
+  const scheduleAvatarPreview = () => {
+    if (!profileAvatarInput) return;
+    clearTimeout(avatarPreviewTimer);
+    avatarPreviewTimer = setTimeout(() => {
+      applyAvatarUrl(profileAvatarInput.value);
+    }, 400);
+  };
+
+  profileAvatarInput?.addEventListener('input', scheduleAvatarPreview);
+  profileAvatarInput?.addEventListener('blur', () => applyAvatarUrl(profileAvatarInput.value));
+
+  profileAvatarClearBtn?.addEventListener('click', () => {
+    applyAvatarUrl('');
+    showProfileInfoStatus('Avatar rimosso. Ricorda di salvare per confermare.', 'info');
+  });
+
+  profileAvatarUploadBtn?.addEventListener('click', () => {
+    profileAvatarFileInput?.click();
+  });
+
+  profileAvatarFileInput?.addEventListener('change', async () => {
+    if (!profileAvatarFileInput?.files || profileAvatarFileInput.files.length === 0) return;
+    const [file] = profileAvatarFileInput.files;
+    if (!file) return;
+    if (!/^image\//.test(file.type || '')) {
+      showProfileInfoStatus('Formato immagine non supportato. Usa PNG, JPG, GIF o WebP.', 'error');
+      profileAvatarFileInput.value = '';
+      return;
+    }
+    if (file.size > AVATAR_MAX_SIZE) {
+      showProfileInfoStatus('L\'immagine e\' troppo grande. Dimensione massima: 2 MB.', 'error');
+      profileAvatarFileInput.value = '';
+      return;
+    }
+    const formData = new FormData();
+    formData.append('avatar', file);
+    showProfileInfoStatus('Caricamento immagine in corso...', 'info');
+    try {
+      const res = await fetch('/api/auth/profile/avatar', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data?.url) {
+        throw new Error(data?.message || 'Errore durante il caricamento dell\'immagine.');
+      }
+      applyAvatarUrl(data.url);
+      showProfileInfoStatus('Immagine caricata. Ricorda di salvare per confermare.', 'success');
+    } catch (error) {
+      console.error('Errore caricamento avatar:', error);
+      showProfileInfoStatus(error.message || 'Errore durante il caricamento dell\'immagine.', 'error');
+    } finally {
+      profileAvatarFileInput.value = '';
+    }
+  });
+
+  const setFormMessage = (el, text = '', type = 'info') => {
+    if (!el) return;
+    el.textContent = text || '';
+    el.className = 'form-message';
+    if (text && type) {
+      el.classList.add(type);
+    }
+  };
+
+  const getInitial = (fullName, username) => {
+    const source = (fullName && fullName.trim()) || (username && username.trim()) || 'U';
+    return source.substring(0, 1).toUpperCase();
+  };
+
+  // Rimossa la duplicazione delle funzioni che ora sono nell'oggetto app
+  logoutBtn?.addEventListener('click', async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch (error) {
+      console.error('Errore durante il logout:', error);
+    } finally {
+      redirectToLogin('/login');
+    }
+  });
   form?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!fileInput?.files || fileInput.files.length === 0) { setMessage('Seleziona un file da caricare.', 'error'); return; }
@@ -272,17 +582,9 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('dashboard-view')?.addEventListener('click', (e) => { const btn = e.target.closest('button[data-action="renewals"]'); if (!btn) return; const sigId = btn.getAttribute('data-sigid'); if (!sigId) return; loadRenewalsIntoModal(sigId); });
 
   // Dashboard expiring
-  const expBody = document.getElementById('expiring-body');
-  const expDaysSel = document.getElementById('exp-days');
-  const expTotal = document.getElementById('exp-total');
-  const expBadge = document.getElementById('exp-badge');
-  const expPrev = document.getElementById('exp-prev');
-  const expNext = document.getElementById('exp-next');
-  const expPageInfo = document.getElementById('exp-page-info');
-  const expPageSizeSel = document.getElementById('exp-page-size');
   let expPage = 1, expTotalPages = 1, expPageSize = expPageSizeSel ? (parseInt(expPageSizeSel.value, 10) || 5) : 5;
   async function loadExpiring(days = 15, page = expPage) {
-    if (!expBody) return;
+    if (!expiringBody) return;
     try {
       const params = new URLSearchParams({ days: String(days), page: String(page), pageSize: String(expPageSize) });
       const res = await fetch(`/api/signatures/expiring?${params.toString()}`);
@@ -290,7 +592,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await res.json();
       const rows = Array.isArray(data.data) ? data.data : [];
       expPage = data.page || 1; expTotalPages = data.totalPages || 1; const total = typeof data.total === 'number' ? data.total : rows.length;
-      expBody.innerHTML = rows.map((r) => {
+      expiringBody.innerHTML = rows.map((r) => {
         const actions = `<button class=\"icon-btn\" title=\"Vedi rinnovi\" data-action=\"renewals\" data-sigid=\"${r.id}\">&#8635;</button>`;
         return `<tr>
           <td>${r.id ?? ''}</td>
@@ -305,13 +607,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (expTotal) expTotal.textContent = `Trovate ${total} scadenze`;
       if (expBadge) expBadge.textContent = String(total);
       if (expPageInfo) expPageInfo.textContent = `Pagina ${expPage} / ${expTotalPages}`;
-      if (expPrev) expPrev.disabled = expPage <= 1; if (expNext) expNext.disabled = expPage >= expTotalPages;
-    } catch (e) { console.error(e); if (expBody) expBody.innerHTML = `<tr><td colspan=\"7\">Errore nel caricamento delle scadenze</td></tr>`; }
+      if (expPrevBtn) expPrevBtn.disabled = expPage <= 1; if (expNextBtn) expNextBtn.disabled = expPage >= expTotalPages;
+    } catch (e) { console.error(e); if (expiringBody) expiringBody.innerHTML = `<tr><td colspan=\"7\">Errore nel caricamento delle scadenze</td></tr>`; }
   }
   expDaysSel?.addEventListener('change', () => { const d = parseInt(expDaysSel.value, 10) || 15; expPage = 1; loadExpiring(d, 1); });
   expPageSizeSel?.addEventListener('change', () => { expPageSize = parseInt(expPageSizeSel.value, 10) || 5; expPage = 1; const d = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15; loadExpiring(d, 1); });
-  expPrev?.addEventListener('click', () => { if (expPage > 1) { const d = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15; loadExpiring(d, expPage - 1); } });
-  expNext?.addEventListener('click', () => { if (expPage < expTotalPages) { const d = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15; loadExpiring(d, expPage + 1); } });
+  expPrevBtn?.addEventListener('click', () => { if (expPage > 1) { const d = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15; loadExpiring(d, expPage - 1); } });
+  expNextBtn?.addEventListener('click', () => { if (expPage < expTotalPages) { const d = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15; loadExpiring(d, expPage + 1); } });
 
   // Dashboard charts
   let yearlyChart, renewalsYearlyChart;
@@ -419,6 +721,104 @@ document.addEventListener('DOMContentLoaded', () => {
       console.error(error);
       reportExpiringEl.textContent = '—';
       reportUnpaidEl.textContent = '—';
+    }
+  }
+
+  profileInfoForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!profileInfoForm) return;
+    const fullName = profileFullNameInput ? profileFullNameInput.value.trim() : '';
+    const avatarUrl = profileAvatarInput ? profileAvatarInput.value.trim() : '';
+    setFormMessage(profileInfoMsg, 'Salvataggio...','info');
+    try {
+      const res = await fetch('/api/auth/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName, avatarUrl })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || 'Errore durante l\'aggiornamento del profilo.');
+      app.currentUser = { ...app.currentUser, fullName, avatarUrl };
+      app.updateProfileHeader(app.currentUser);
+      app.initPasswordToggles(profileView);
+      setFormMessage(profileInfoMsg, 'Profilo aggiornato.','success');
+    } catch (error) {
+      console.error('Errore aggiornamento profilo:', error);
+      setFormMessage(
+        profileInfoMsg,
+        error.message || 'Errore durante l\'aggiornamento del profilo.','error'
+      );
+    }
+  });
+
+  profilePasswordForm?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (!profilePasswordForm) return;
+    const currentPassword = profileCurrentPasswordInput ? profileCurrentPasswordInput.value : '';
+    const newPassword = profileNewPasswordInput ? profileNewPasswordInput.value : '';
+    const confirmPassword = profileConfirmPasswordInput ? profileConfirmPasswordInput.value : '';
+    if (newPassword !== confirmPassword) {
+      setFormMessage(profilePasswordMsg, 'Le password non coincidono.','error');
+      return;
+    }
+    if (!newPassword || newPassword.length < 10) {
+      setFormMessage(profilePasswordMsg, 'La nuova password deve contenere almeno 10 caratteri.','error');
+      return;
+    }
+    setFormMessage(profilePasswordMsg, 'Aggiornamento password...','info');
+    try {
+      const res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPassword, newPassword })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || 'Errore durante il cambio password.');
+      setFormMessage(profilePasswordMsg, 'Password aggiornata correttamente.','success');
+      if (profileCurrentPasswordInput) profileCurrentPasswordInput.value = '';
+      if (profileNewPasswordInput) profileNewPasswordInput.value = '';
+      if (profileConfirmPasswordInput) profileConfirmPasswordInput.value = '';
+    } catch (error) {
+      console.error('Errore cambio password:', error);
+      setFormMessage(
+        profilePasswordMsg,
+        error.message || 'Errore durante il cambio password.','error'
+      );
+    }
+  });
+
+  app.initPasswordToggles(document);
+  async function loadProfile() {
+    if (!profileView) return;
+    try {
+      const res = await fetch('/api/auth/profile');
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.message || 'Errore nel caricamento del profilo.');
+      const fullName = data.fullName || '';
+      const avatarUrl = data.avatarUrl || '';
+      if (profileFullNameInput) profileFullNameInput.value = fullName;
+      if (profileAvatarInput) profileAvatarInput.value = avatarUrl;
+      clearTimeout(avatarPreviewTimer);
+      if (profileCurrentPasswordInput) profileCurrentPasswordInput.value = '';
+      if (profileNewPasswordInput) profileNewPasswordInput.value = '';
+      if (profileConfirmPasswordInput) profileConfirmPasswordInput.value = '';
+      setFormMessage(profileInfoMsg, '');
+      setFormMessage(profilePasswordMsg, '');
+      app.currentUser = {
+        ...app.currentUser,
+        username: data.username || app.currentUser?.username || '',
+        fullName,
+        avatarUrl
+      };
+      app.updateProfileHeader(app.currentUser);
+      app.initPasswordToggles(profileView);
+    } catch (error) {
+      console.error('Errore profilo:', error);
+      setFormMessage(
+        profileInfoMsg,
+        error.message || 'Errore nel caricamento del profilo.',
+        'error'
+      );
     }
   }
 
@@ -749,33 +1149,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const initialDays = expDaysSel ? (parseInt(expDaysSel.value, 10) || 15) : 15;
   loadExpiring(initialDays, 1);
   setupLiveReload();
-  
-});
 
-function setupLiveReload() {
-  if (typeof window === 'undefined' || typeof EventSource === 'undefined') return;
-  let reconnectAttempts = 0;
-  let reloading = false;
 
-  const connect = () => {
-    const es = new EventSource('/api/live-reload');
-    es.onopen = () => {
-      if (reconnectAttempts > 0 && !reloading) {
-        reloading = true;
-        window.location.reload();
-      }
-      reconnectAttempts = 0;
-    };
-    es.onerror = () => {
-      es.close();
-      if (reloading) return;
-      reconnectAttempts += 1;
-      const delay = Math.min(1000 * 2 ** reconnectAttempts, 10000);
-      setTimeout(connect, delay);
-    };
-  };
 
-  connect();
-}
+
 
 
