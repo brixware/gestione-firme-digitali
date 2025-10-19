@@ -42,31 +42,11 @@ const avatarUpload = multer({
     }
 });
 
-const ensureAuthenticated = (req, res, next) => {
-    if (!req.session.userId) {
-        return res.status(401).json({ message: 'Non autenticato.' });
-    }
-    return next();
-};
-
-const runAvatarUpload = (req, res, next) =>
-    avatarUpload.single('avatar')(req, res, (err) => {
-        if (!err) return next();
-        if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
-            return res
-                .status(400)
-                .json({ message: 'L\'immagine e\' troppo grande. Dimensione massima: 2 MB.' });
-        }
-        return res
-            .status(400)
-            .json({ message: err?.message || 'Errore durante il caricamento dell\'immagine.' });
-    });
-
 const buildAvatarDataUrl = (mime, buffer) => {
     if (!buffer || !Buffer.isBuffer(buffer) || buffer.length === 0) return null;
     const safeMime = typeof mime === 'string' && mime.trim().length > 0 ? mime.trim() : 'image/png';
     const base64 = buffer.toString('base64');
-    return 'data:' + safeMime + ';base64,' + base64;
+    return `data:${safeMime};base64,${base64}`;
 };
 
 const parseAvatarDataUrl = (value) => {
@@ -122,6 +102,26 @@ const extractAvatarDataUrl = (user) => {
 const regenerateSession = (req) =>
     new Promise((resolve, reject) => {
         req.session.regenerate((err) => (err ? reject(err) : resolve()));
+    });
+
+const ensureAuthenticated = (req, res, next) => {
+    if (!req.session.userId) {
+        return res.status(401).json({ message: 'Non autenticato.' });
+    }
+    return next();
+};
+
+const runAvatarUpload = (req, res, next) =>
+    avatarUpload.single('avatar')(req, res, (err) => {
+        if (!err) return next();
+        if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+            return res
+                .status(400)
+                .json({ message: 'L\'immagine e\' troppo grande. Dimensione massima: 2 MB.' });
+        }
+        return res
+            .status(400)
+            .json({ message: err?.message || 'Errore durante il caricamento dell\'immagine.' });
     });
 
 router.get('/session', async (req, res) => {
@@ -283,9 +283,16 @@ router.put('/profile', async (req, res) => {
         let avatarBuffer = null;
         let avatarMime = null;
         if (rawAvatar) {
-            const parsed = parseAvatarDataUrl(rawAvatar);
-            avatarBuffer = parsed.buffer;
-            avatarMime = parsed.mime;
+            try {
+                const parsed = parseAvatarDataUrl(rawAvatar);
+                avatarBuffer = parsed.buffer;
+                avatarMime = parsed.mime;
+            } catch (parseError) {
+                console.error('Avatar non valido:', parseError);
+                return res
+                    .status(400)
+                    .json({ message: parseError.message || 'Immagine non valida.' });
+            }
         }
 
         await updateUserProfile(req.session.userId, {
@@ -300,8 +307,11 @@ router.put('/profile', async (req, res) => {
         res.json({ message: 'Profilo aggiornato.' });
     } catch (error) {
         console.error('Errore aggiornamento profilo:', error);
-        res.status(500).json({ message: 'Errore durante l\'aggiornamento del profilo.' });
+        res
+            .status(500)
+            .json({ message: error?.message || 'Errore durante l\'aggiornamento del profilo.' });
     }
 });
 
 module.exports = router;
+

@@ -296,6 +296,44 @@ const fmt = {
     setFormMessage(profileInfoMsg, text, type);
   };
 
+  const readFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error || new Error('Impossibile leggere il file.'));
+    reader.readAsDataURL(file);
+  });
+
+  const loadImageElement = (src) => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('Impossibile elaborare l\'immagine.'));
+    img.src = src;
+  });
+
+  const MAX_AVATAR_DIMENSION = 256;
+  const processAvatarFile = async (file) => {
+    const originalDataUrl = await readFileAsDataUrl(file);
+    const img = await loadImageElement(originalDataUrl);
+    const { width, height } = img;
+    const maxSide = Math.max(width, height);
+    let targetWidth = width;
+    let targetHeight = height;
+    if (maxSide > MAX_AVATAR_DIMENSION) {
+      const scale = MAX_AVATAR_DIMENSION / maxSide;
+      targetWidth = Math.max(1, Math.round(width * scale));
+      targetHeight = Math.max(1, Math.round(height * scale));
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+    ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+    const outputMime = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+    const quality = outputMime === 'image/jpeg' ? 0.85 : undefined;
+    return canvas.toDataURL(outputMime, quality);
+  };
+
   const updateAvatarStatus = (dataUrl) => {
     if (!profileAvatarStatus) return;
     if (!dataUrl) {
@@ -346,23 +384,14 @@ const fmt = {
       profileAvatarFileInput.value = '';
       return;
     }
-    const formData = new FormData();
-    formData.append('avatar', file);
-    showProfileInfoStatus('Caricamento immagine in corso...', 'info');
     try {
-      const res = await fetch('/api/auth/profile/avatar', {
-        method: 'POST',
-        body: formData
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data?.dataUrl) {
-        throw new Error(data?.message || 'Errore durante il caricamento dell\'immagine.');
-      }
-      applyAvatarUrl(data.dataUrl);
-      showProfileInfoStatus('Immagine caricata. Ricorda di salvare per confermare.', 'success');
+      showProfileInfoStatus('Elaborazione immagine...', 'info');
+      const dataUrl = await processAvatarFile(file);
+      applyAvatarUrl(dataUrl);
+      showProfileInfoStatus('Immagine pronta. Ricorda di salvare per confermare.', 'success');
     } catch (error) {
-      console.error('Errore caricamento avatar:', error);
-      showProfileInfoStatus(error.message || 'Errore durante il caricamento dell\'immagine.', 'error');
+      console.error('Errore elaborazione avatar:', error);
+      showProfileInfoStatus(error.message || 'Errore durante l\'elaborazione dell\'immagine.', 'error');
     } finally {
       profileAvatarFileInput.value = '';
     }

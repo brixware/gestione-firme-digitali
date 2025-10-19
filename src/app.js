@@ -18,8 +18,10 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+const BODY_LIMIT = process.env.REQUEST_BODY_LIMIT || '50mb';
+
+app.use(express.json({ limit: BODY_LIMIT }));
+app.use(express.urlencoded({ extended: true, limit: BODY_LIMIT }));
 
 app.use(
     session({
