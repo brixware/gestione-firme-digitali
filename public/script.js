@@ -658,11 +658,20 @@ const fmt = {
           plugins: {
             legend: { position: 'bottom' },
             tooltip: {
+              displayColors: false,
               callbacks: {
-                label: (context) => {
-                  const row = rows[context.dataIndex];
-                  return formatStatLabel(row);
-                }
+                title: (items) => {
+                  const item = items?.[0];
+                  if (!item) return '';
+                  const row = rows[item.dataIndex];
+                  const countText = formatCount(row.count || 0);
+                  if (typeof row.percentage === 'number') {
+                    return `${countText} (${formatPercentage(row.percentage)})`;
+                  }
+                  return countText;
+                },
+                label: () => '',
+                afterLabel: () => ''
               }
             }
           }
@@ -691,11 +700,20 @@ const fmt = {
           plugins: {
             legend: { position: 'bottom' },
             tooltip: {
+              displayColors: false,
               callbacks: {
-                label: (context) => {
-                  const row = rows[context.dataIndex];
-                  return formatStatLabel(row);
-                }
+                title: (items) => {
+                  const item = items?.[0];
+                  if (!item) return '';
+                  const row = rows[item.dataIndex];
+                  const countText = formatCount(row.count || 0);
+                  if (typeof row.percentage === 'number') {
+                    return `${countText} (${formatPercentage(row.percentage)})`;
+                  }
+                  return countText;
+                },
+                label: () => '',
+                afterLabel: () => ''
               }
             }
           }
