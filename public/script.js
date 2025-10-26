@@ -186,7 +186,7 @@ const fmt = {
       if (v instanceof Date) return v.toLocaleDateString('it-IT');
       return String(v);
     },
-    money: (v) => (typeof v === 'number' ? v.toFixed(2) : (v ?? '')),
+    money: (v) => (typeof v === 'number' ? `${v.toFixed(2)} €` : (v ? `${v} €` : '')),
   };
 
   // Navigation + accordion
@@ -477,7 +477,7 @@ const fmt = {
     invio: document.getElementById('edit-invio')
   };
   let editingId = null;
-  let sigPage = 1, sigTotalPages = 1, sigPageSize = sigPageSizeSel ? (parseInt(sigPageSizeSel.value, 10) || 20) : 20, sortBy = 'id', sortDir = 'asc';
+  let sigPage = 1, sigTotalPages = 1, sigPageSize = sigPageSizeSel ? (parseInt(sigPageSizeSel.value, 10) || 20) : 20, sortBy = 'id', sortDir = 'desc';
   const filters = {
     id: '',
     titolare: '',
@@ -485,7 +485,7 @@ const fmt = {
     recapito_telefonico: '',
     data_emissione: '',
     fattura_numero: '',
-    fattura_tipo_invio: '',
+    fattura_tipo_pagamento: '',
     emesso_da: '',
     paid: fPaid ? fPaid.value : ''
   };
@@ -523,8 +523,8 @@ const fmt = {
           <td>${fmt.date(r.data_emissione)}${emHint}</td>
           <td>${fmt.money(r.costo_ie)}</td>
           <td>${fmt.money(r.importo_ie)}</td>
-          <td>${r.fattura_numero ?? ''}</td>
-          <td>${r.fattura_tipo_invio ?? ''}</td>
+          <td>${r.fattura_numero ?? ''}${r.fattura_tipo_invio ? ` <span class="hint-icon" title="Tipo invio: ${esc(r.fattura_tipo_invio)}">i</span>` : ''}</td>
+          <td>${r.fattura_tipo_pagamento ?? ''}</td>
           <td><span class="action-group">${editBtn}${paidBtn}${renewBtn}</span></td>
         </tr>`;
       }).join('');
@@ -545,7 +545,7 @@ const fmt = {
   fRecapito?.addEventListener('input', () => { filters.recapito_telefonico = fRecapito.value.trim(); scheduleFilter(); });
   fData?.addEventListener('change', () => { filters.data_emissione = fData.value; scheduleFilter(); });
   fFattura?.addEventListener('input', () => { filters.fattura_numero = fFattura.value.trim(); scheduleFilter(); });
-  fInvio?.addEventListener('input', () => { filters.fattura_tipo_invio = fInvio.value.trim(); scheduleFilter(); });
+  fTipoPagamento?.addEventListener('input', () => { filters.fattura_tipo_pagamento = fTipoPagamento.value.trim(); scheduleFilter(); });
   fPaid?.addEventListener('change', () => { filters.paid = fPaid.value; loadSignatures(1); });
   fClear?.addEventListener('click', () => {
     if (fId) fId.value = '';
@@ -562,7 +562,7 @@ const fmt = {
     filters.recapito_telefonico = '';
     filters.data_emissione = '';
     filters.fattura_numero = '';
-    filters.fattura_tipo_invio = '';
+    filters.fattura_tipo_pagamento = '';
     filters.emesso_da = '';
     filters.paid = '';
     loadSignatures(1);
