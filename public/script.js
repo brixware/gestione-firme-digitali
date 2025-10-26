@@ -459,7 +459,7 @@ const fmt = {
   const fRecapito = document.getElementById('f-recapito');
   const fData = document.getElementById('f-data');
   const fFattura = document.getElementById('f-fattura');
-  const fInvio = document.getElementById('f-invio');
+  const fTipoPagamento = document.getElementById('f-tipo-pagamento');
   const fPaid = document.getElementById('f-paid');
   const fClear = document.getElementById('f-clear');
   const editModal = document.getElementById('modal-edit');
@@ -513,7 +513,10 @@ const fmt = {
         const emHint = r.emesso_da ? ` <span class="hint-icon" title="Emesso da: ${esc(r.emesso_da)}">i</span>` : '';
         const editBtn = `<button class="icon-btn" title="Modifica" data-action="edit" data-id="${r.id}">&#9998;</button>`;
         const paidClass = r.paid ? 'icon-btn-success' : 'icon-btn-danger';
-        const paidBtn = `<button class="icon-btn ${paidClass}" data-action="toggle-paid" data-id="${r.id}" data-paid="${r.paid ? 1 : 0}" title="${r.paid ? 'Segna non pagata' : 'Segna pagata'}">${r.paid ? '&check;' : '&times;'}</button>`;
+        const paidTitle = r.paid 
+          ? `Segna non pagata${r.data_riferimento_incasso ? `\nData pagamento: ${fmt.date(r.data_riferimento_incasso)}` : ''}`
+          : 'Segna pagata';
+        const paidBtn = `<button class="icon-btn ${paidClass}" data-action="toggle-paid" data-id="${r.id}" data-paid="${r.paid ? 1 : 0}" title="${paidTitle}">${r.paid ? '&check;' : '&times;'}</button>`;
         const renewBtn = `<button class="icon-btn" title="Vedi rinnovi" data-action="renewals" data-sigid="${r.id}">&#8635;</button>`;
         return `<tr>
           <td>${r.id ?? ''}</td>
@@ -524,7 +527,7 @@ const fmt = {
           <td>${fmt.money(r.costo_ie)}</td>
           <td>${fmt.money(r.importo_ie)}</td>
           <td>${r.fattura_numero ?? ''}${r.fattura_tipo_invio ? ` <span class="hint-icon" title="Tipo invio: ${esc(r.fattura_tipo_invio)}">i</span>` : ''}</td>
-          <td>${r.fattura_tipo_pagamento ?? ''}</td>
+          <td>${r.fattura_tipo_pagamento ?? ''}${r.data_riferimento_incasso ? ` (${fmt.date(r.data_riferimento_incasso)})` : ''}</td>
           <td><span class="action-group">${editBtn}${paidBtn}${renewBtn}</span></td>
         </tr>`;
       }).join('');
@@ -568,25 +571,55 @@ const fmt = {
     loadSignatures(1);
   });
   sigBody?.addEventListener('click', async (e) => {
+    // Gestione pulsante toggle-paid
     const tgl = e.target.closest('button[data-action="toggle-paid"]');
     if (tgl) {
       const id = tgl.getAttribute('data-id');
       const current = tgl.getAttribute('data-paid') === '1' ? 1 : 0;
       const next = current ? 0 : 1;
       try {
-        const res = await fetch(`/api/signatures/${encodeURIComponent(id)}/paid`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paid: next }) });
+        const res = await fetch(`/api/signatures/${encodeURIComponent(id)}/paid`, { 
+          method: 'PATCH', 
+          headers: { 'Content-Type': 'application/json' }, 
+          body: JSON.stringify({ paid: next }) 
+        });
         if (!res.ok) throw new Error('Errore aggiornamento pagamento');
         await loadSignatures(sigPage);
-      } catch (err) { console.error(err); }
+      } catch (err) { 
+        console.error(err); 
+        alert('Errore durante l\'aggiornamento dello stato di pagamento');
+      }
       return;
     }
+
+    // Gestione pulsante edit
     const editBtn = e.target.closest('button[data-action="edit"]');
     if (editBtn) {
       const id = editBtn.getAttribute('data-id');
-      if (id) { await openEditModalFor(id); }
+      if (id) { 
+        try {
+          await openEditModalFor(id); 
+        } catch (err) {
+          console.error(err);
+          alert('Errore durante l\'apertura del form di modifica');
+        }
+      }
       return;
     }
-    const btn = e.target.closest('button[data-action="renewals"]'); if (!btn) return; const sigId = btn.getAttribute('data-sigid'); if (!sigId) return; loadRenewalsIntoModal(sigId);
+
+    // Gestione pulsante renewals
+    const renewBtn = e.target.closest('button[data-action="renewals"]');
+    if (renewBtn) {
+      const sigId = renewBtn.getAttribute('data-sigid');
+      if (sigId) {
+        try {
+          await loadRenewalsIntoModal(sigId);
+        } catch (err) {
+          console.error(err);
+          alert('Errore durante il caricamento dei rinnovi');
+        }
+      }
+    }
   });
 
   // Renewals modal

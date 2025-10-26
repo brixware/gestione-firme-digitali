@@ -175,6 +175,7 @@ router.get('/signatures', async (req, res) => {
             'importo_ie',
             'fattura_numero',
             'fattura_tipo_invio',
+            'fattura_tipo_pagamento',
             'paid',
             'fattura_pagata'
         ]);
@@ -185,7 +186,7 @@ router.get('/signatures', async (req, res) => {
         const countSql = `SELECT COUNT(*) AS total FROM \`${tableName}\` ${whereSql}`;
         const [[{ total }]] = await db.pool.query(countSql, params);
 
-        const dataSql = `SELECT id, titolare, email, recapito_telefonico, data_emissione, emesso_da, costo_ie, importo_ie, fattura_numero, fattura_tipo_invio,
+        const dataSql = `SELECT id, titolare, email, recapito_telefonico, data_emissione, emesso_da, costo_ie, importo_ie, fattura_numero, fattura_tipo_invio, fattura_tipo_pagamento, data_riferimento_incasso,
                          IFNULL(fattura_pagata, CASE WHEN data_riferimento_incasso IS NOT NULL THEN 1 ELSE 0 END) AS paid
                          FROM \`${tableName}\`
                          ${whereSql}
