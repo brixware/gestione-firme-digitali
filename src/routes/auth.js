@@ -2,6 +2,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
+const asyncHandler = require('../utils/asyncHandler');
 const {
     getUserByUsername,
     getUserById,
@@ -124,19 +125,15 @@ const runAvatarUpload = (req, res, next) =>
             .json({ message: err?.message || 'Errore durante il caricamento dell\'immagine.' });
     });
 
-router.get('/session', async (req, res) => {
+router.get('/session', asyncHandler(async (req, res) => {
     if (!req.session.userId) {
         return res.json({ authenticated: false });
     }
     let avatarDataUrl = req.session.avatarUrl || null;
     if (!avatarDataUrl) {
-        try {
-            const user = await getUserById(req.session.userId);
-            avatarDataUrl = extractAvatarDataUrl(user) || null;
-            if (avatarDataUrl) req.session.avatarUrl = avatarDataUrl;
-        } catch (error) {
-            console.error('Errore recupero avatar sessione:', error);
-        }
+        const user = await getUserById(req.session.userId);
+        avatarDataUrl = extractAvatarDataUrl(user) || null;
+        if (avatarDataUrl) req.session.avatarUrl = avatarDataUrl;
     }
     res.json({
         authenticated: true,
@@ -145,44 +142,39 @@ router.get('/session', async (req, res) => {
         fullName: req.session.fullName || null,
         avatarUrl: avatarDataUrl
     });
-});
+}));
 
-router.post('/login', async (req, res) => {
-    try {
-        const { username, password } = req.body || {};
-        if (!username || !password) {
-            return res.status(400).json({ message: 'Credenziali mancanti.' });
-        }
-
-        const user = await getUserByUsername(username);
-        if (!user) {
-            return res.status(401).json({ message: 'Credenziali non valide.' });
-        }
-
-        const passwordOk = await verifyPassword(password, user.password_hash);
-        if (!passwordOk) {
-            return res.status(401).json({ message: 'Credenziali non valide.' });
-        }
-
-        await regenerateSession(req);
-        req.session.userId = user.id;
-        req.session.username = user.username;
-        req.session.mustChangePassword = Boolean(user.must_change_password);
-        req.session.fullName = user.full_name || null;
-        const avatarDataUrl = extractAvatarDataUrl(user);
-        req.session.avatarUrl = avatarDataUrl;
-
-        res.json({
-            message: 'Autenticato.',
-            mustChangePassword: Boolean(user.must_change_password),
-            fullName: user.full_name || null,
-            avatarUrl: avatarDataUrl || null
-        });
-    } catch (error) {
-        console.error('Errore login:', error);
-        res.status(500).json({ message: 'Errore durante il login.' });
+router.post('/login', asyncHandler(async (req, res) => {
+    const { username, password } = req.body || {};
+    if (!username || !password) {
+        return res.status(400).json({ message: 'Credenziali mancanti.' });
     }
-});
+
+    const user = await getUserByUsername(username);
+    if (!user) {
+        return res.status(401).json({ message: 'Credenziali non valide.' });
+    }
+
+    const passwordOk = await verifyPassword(password, user.password_hash);
+    if (!passwordOk) {
+        return res.status(401).json({ message: 'Credenziali non valide.' });
+    }
+
+    await regenerateSession(req);
+    req.session.userId = user.id;
+    req.session.username = user.username;
+    req.session.mustChangePassword = Boolean(user.must_change_password);
+    req.session.fullName = user.full_name || null;
+    const avatarDataUrl = extractAvatarDataUrl(user);
+    req.session.avatarUrl = avatarDataUrl;
+
+    res.json({
+        message: 'Autenticato.',
+        mustChangePassword: Boolean(user.must_change_password),
+        fullName: user.full_name || null,
+        avatarUrl: avatarDataUrl || null
+    });
+}));
 
 router.post('/logout', (req, res) => {
     req.session.destroy(() => {

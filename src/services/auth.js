@@ -1,11 +1,10 @@
-const bcrypt = require('bcrypt');
 const db = require('./dbConnector');
 const dbConfig = require('../../config/dbConfig');
+const { generateHash, verifyHash } = require('../utils/password');
 
 const USERS_TABLE = 'app_users';
 const DEFAULT_USERNAME = 'brixware';
 const TEMP_PASSWORD = '1234567890';
-const SALT_ROUNDS = 10;
 
 const ensureUsersTable = async () => {
     await db.pool.query(
@@ -53,7 +52,7 @@ const ensureDefaultUser = async () => {
         [DEFAULT_USERNAME]
     );
     if (rows.length === 0) {
-        const hash = await bcrypt.hash(TEMP_PASSWORD, SALT_ROUNDS);
+        const hash = generateHash(TEMP_PASSWORD);
         await db.pool.query(
             `INSERT INTO \`${USERS_TABLE}\` (username, password_hash, must_change_password)
              VALUES (?, ?, 1)`,
@@ -94,10 +93,10 @@ const getUserById = async (id) => {
     return rows[0] || null;
 };
 
-const verifyPassword = async (password, hash) => bcrypt.compare(password, hash);
+const verifyPassword = async (password, hash) => verifyHash(password, hash);
 
 const updateUserPassword = async (id, newPassword, { requireChangeFlag = false } = {}) => {
-    const hash = await bcrypt.hash(newPassword, SALT_ROUNDS);
+    const hash = generateHash(newPassword);
     await db.pool.query(
         `UPDATE \`${USERS_TABLE}\`
          SET password_hash = ?, must_change_password = ?, updated_at = NOW()

@@ -1,11 +1,45 @@
 const fs = require('fs');
 const path = require('path');
 
-// Crea la directory dei log se non esiste
-const LOG_DIR = path.join(__dirname, '../../logs');
-if (!fs.existsSync(LOG_DIR)) {
-    fs.mkdirSync(LOG_DIR, { recursive: true });
-}
+// Determina il percorso della directory dei log
+// Funzione per ottenere il percorso dei log
+const getLogDir = () => {
+    // Il percorso di produzione è sempre .ws, mai .net
+    const prodPath = '/var/www/vhosts/dashboard.brixware.ws/logs';
+
+    // In produzione, usa sempre il percorso .ws per garantire coerenza
+    if (process.env.NODE_ENV === 'production') {
+        return prodPath;
+    }
+    // In sviluppo, usa il percorso relativo
+    return path.join(__dirname, '../../logs');
+};
+
+// Assicura che la directory dei log esista
+const ensureLogDir = (dir) => {
+    try {
+        // Se siamo in produzione, assicurati che non stiamo provando a usare .net
+        if (process.env.NODE_ENV === 'production' && dir.includes('.net')) {
+            console.error('Tentativo di usare .net invece di .ws nel percorso dei log');
+            return false;
+        }
+
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+            console.log(`Created log directory: ${dir}`);
+        }
+
+        // Test di scrittura per verificare i permessi
+        const testFile = path.join(dir, '.test');
+        fs.writeFileSync(testFile, '');
+        fs.unlinkSync(testFile);
+
+        return true;
+    } catch (error) {
+        console.error(`Errore nella creazione/accesso directory log ${dir}:`, error);
+        return false;
+    }
+};
 
 const LOG_LEVELS = {
     ERROR: 0,   // Errori critici che richiedono attenzione
@@ -22,11 +56,21 @@ const getCurrentLogLevel = () => {
 };
 
 const getLogFileName = () => {
+    // Ottieni il percorso dei log
+    const logDir = getLogDir();
+    
+    // Assicurati che la directory esista
+    if (!ensureLogDir(logDir)) {
+        console.error(`Failed to ensure log directory exists: ${logDir}`);
+        process.exit(1);
+    }
+
+    // Costruisci il nome del file
     const date = new Date();
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
-    return path.join(LOG_DIR, `${year}-${month}-${day}.log`);
+    return path.join(logDir, `${year}-${month}-${day}.log`);
 };
 
 const formatMessage = (level, ...args) => {
@@ -65,6 +109,7 @@ const verbose = (...args) => log(LOG_LEVELS.VERBOSE, ...args);
 
 module.exports = {
     LOG_LEVELS,
+    log,
     error,
     warn,
     info,
