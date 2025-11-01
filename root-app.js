@@ -68,12 +68,20 @@ const loadApp = new Promise((resolve, reject) => {
     }
 });
 
-// Esporta una Promise che si risolve con l'applicazione o viene rifiutata dopo il timeout
-module.exports = Promise.race([
+// Avvia l'applicazione
+Promise.race([
     loadApp,
     new Promise((_, reject) => {
         setTimeout(() => {
             reject(new Error(`Application load timed out after ${LOAD_TIMEOUT}ms`));
         }, LOAD_TIMEOUT);
     })
-]);
+]).then(app => {
+    const port = process.env.PORT || 3000;
+    app.listen(port, () => {
+        console.log(`Server listening on port ${port}`);
+    });
+}).catch(err => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+});
