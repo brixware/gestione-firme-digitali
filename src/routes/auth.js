@@ -150,14 +150,20 @@ router.post('/login', asyncHandler(async (req, res) => {
         return res.status(400).json({ message: 'Credenziali mancanti.' });
     }
 
-    const user = await getUserByUsername(username);
-    if (!user) {
-        return res.status(401).json({ message: 'Credenziali non valide.' });
-    }
+    let user;
+    try {
+        user = await getUserByUsername(username);
+        if (!user) {
+            return res.status(401).json({ message: 'Credenziali non valide.' });
+        }
 
-    const passwordOk = await verifyPassword(password, user.password_hash);
-    if (!passwordOk) {
-        return res.status(401).json({ message: 'Credenziali non valide.' });
+        const passwordOk = await verifyPassword(password, user.password_hash);
+        if (!passwordOk) {
+            return res.status(401).json({ message: 'Credenziali non valide.' });
+        }
+    } catch (error) {
+        console.error('Errore durante la verifica delle credenziali:', error);
+        return res.status(500).json({ message: 'Errore durante la verifica delle credenziali.' });
     }
 
     await regenerateSession(req);

@@ -196,17 +196,15 @@ const initializeApp = async () => {
         await ensureAuthSetup();
         info('Authentication setup completed');
 
-        if (!module.parent) {
-            // Se eseguito direttamente, avvia il server
-            const server = app.listen(PORT, () => {
-                info(`Server avviato su http://localhost:${PORT}`);
-            });
+        // Avvia sempre il server
+        const server = app.listen(PORT, () => {
+            info(`Server avviato su http://localhost:${PORT}`);
+        });
 
-            server.on('error', (err) => {
-                error('Server error:', err);
-                process.exit(1);
-            });
-        }
+        server.on('error', (err) => {
+            error('Server error:', err);
+            process.exit(1);
+        });
         
         // Esportiamo l'app configurata
         return app;

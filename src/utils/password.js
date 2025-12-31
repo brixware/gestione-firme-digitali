@@ -1,23 +1,13 @@
-const crypto = require('crypto');
+const bcrypt = require('bcrypt');
 
-const SALT_LENGTH = 16;
-const KEY_LENGTH = 64;
-const ITERATIONS = 10000;
-const DIGEST = 'sha512';
+const SALT_ROUNDS = 10;
 
-function generateHash(password) {
-    const salt = crypto.randomBytes(SALT_LENGTH);
-    const hash = crypto.pbkdf2Sync(password, salt, ITERATIONS, KEY_LENGTH, DIGEST);
-    const combined = Buffer.concat([salt, hash]);
-    return combined.toString('base64');
+async function generateHash(password) {
+    return await bcrypt.hash(password, SALT_ROUNDS);
 }
 
-function verifyHash(password, storedHash) {
-    const buffer = Buffer.from(storedHash, 'base64');
-    const salt = buffer.slice(0, SALT_LENGTH);
-    const hash = buffer.slice(SALT_LENGTH);
-    const newHash = crypto.pbkdf2Sync(password, salt, ITERATIONS, KEY_LENGTH, DIGEST);
-    return crypto.timingSafeEqual(hash, newHash);
+async function verifyHash(password, storedHash) {
+    return await bcrypt.compare(password, storedHash);
 }
 
 module.exports = {

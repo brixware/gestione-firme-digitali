@@ -47,20 +47,25 @@ const ensureColumn = async (columnName, definition) => {
 };
 
 const ensureDefaultUser = async () => {
-    const [rows] = await db.pool.query(
-        `SELECT id FROM \`${USERS_TABLE}\` WHERE username = ? LIMIT 1`,
-        [DEFAULT_USERNAME]
-    );
-    if (rows.length === 0) {
-        const hash = generateHash(TEMP_PASSWORD);
-        await db.pool.query(
-            `INSERT INTO \`${USERS_TABLE}\` (username, password_hash, must_change_password)
-             VALUES (?, ?, 1)`,
-            [DEFAULT_USERNAME, hash]
+    try {
+        const [rows] = await db.pool.query(
+            `SELECT id FROM \`${USERS_TABLE}\` WHERE username = ? LIMIT 1`,
+            [DEFAULT_USERNAME]
         );
-        console.log(
-            `Utente di default creato: ${DEFAULT_USERNAME} (password temporanea: ${TEMP_PASSWORD})`
-        );
+        if (rows.length === 0) {
+            const hash = await generateHash(TEMP_PASSWORD);
+            await db.pool.query(
+                `INSERT INTO \`${USERS_TABLE}\` (username, password_hash, must_change_password)
+                 VALUES (?, ?, 1)`,
+                [DEFAULT_USERNAME, hash]
+            );
+            console.log(
+                `Utente di default creato: ${DEFAULT_USERNAME} (password temporanea: ${TEMP_PASSWORD})`
+            );
+        }
+    } catch (error) {
+        console.error('Errore durante la creazione dell\'utente di default:', error);
+        throw error;
     }
 };
 
@@ -96,13 +101,18 @@ const getUserById = async (id) => {
 const verifyPassword = async (password, hash) => verifyHash(password, hash);
 
 const updateUserPassword = async (id, newPassword, { requireChangeFlag = false } = {}) => {
-    const hash = generateHash(newPassword);
-    await db.pool.query(
-        `UPDATE \`${USERS_TABLE}\`
-         SET password_hash = ?, must_change_password = ?, updated_at = NOW()
-         WHERE id = ?`,
-        [hash, requireChangeFlag ? 1 : 0, id]
-    );
+    try {
+        const hash = await generateHash(newPassword);
+        await db.pool.query(
+            `UPDATE \`${USERS_TABLE}\`
+             SET password_hash = ?, must_change_password = ?, updated_at = NOW()
+             WHERE id = ?`,
+            [hash, requireChangeFlag ? 1 : 0, id]
+        );
+    } catch (error) {
+        console.error('Errore durante l\'aggiornamento della password:', error);
+        throw error;
+    }
 };
 
 const updateUserProfile = async (

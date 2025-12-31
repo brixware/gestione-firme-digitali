@@ -35,8 +35,23 @@ $excludeFiles = @(
     "*.log",
     "logs/*",
     "deploy.ps1",
+    "deploy.ps1.old",
     "backups",
-    "deploy"
+    "deploy",
+    "*.ps1",
+    "test-*.js",
+    "reset.sql",
+    "app-startup.log"
+)
+
+# Script sensibili da non caricare mai in produzione
+$excludeScripts = @(
+    "scripts\resetPassword.js",
+    "scripts\resetPasswordProduction.js",
+    "scripts\compareDatabase.js",
+    "scripts\recreateUser.js",
+    "scripts\testConnection.js",
+    "scripts\testChangePassword.js"
 )
 
 # Prepara deploy
@@ -47,11 +62,31 @@ New-Item -ItemType Directory -Force -Path $deployDir | Out-Null
 # Copia file
 Get-ChildItem -Path $localBasePath -Exclude ($excludeFiles + @("deploy")) | ForEach-Object {
     if ($_.FullName -ne $deployDir) {
-        if ($_.PSIsContainer) {
-            Copy-Item -Path $_.FullName -Destination (Join-Path $deployDir $_.Name) -Recurse -Force
-        } else {
-            Copy-Item -Path $_.FullName -Destination $deployDir -Force
+        $shouldExclude = $false
+        foreach ($pattern in $excludeScripts) {
+            $fullPattern = Join-Path $localBasePath $pattern
+            if ($_.FullName -like $fullPattern -or $_.FullName -eq $fullPattern) {
+                $shouldExclude = $true
+                break
+            }
         }
+        
+        if (-not $shouldExclude) {
+            if ($_.PSIsContainer) {
+                Copy-Item -Path $_.FullName -Destination (Join-Path $deployDir $_.Name) -Recurse -Force
+            } else {
+                Copy-Item -Path $_.FullName -Destination $deployDir -Force
+            }
+        }
+    }
+}
+
+# Rimuovi gli script sensibili dalla cartella deploy/scripts se presenti
+foreach ($script in $excludeScripts) {
+    $scriptPath = Join-Path $deployDir $script
+    if (Test-Path $scriptPath) {
+        Remove-Item $scriptPath -Force
+        Write-Host "Rimosso script sensibile: $script" -ForegroundColor Yellow
     }
 }
 

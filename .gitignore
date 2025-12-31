@@ -3,6 +3,7 @@ node_modules/
 
 # Environment / secrets
 .env
+.env.local
 
 # Build outputs / uploads
 uploads/
@@ -10,9 +11,19 @@ uploads/
 # Logs and temp files
 npm-debug.log*
 *.log
+logs/
 
 # macOS artifacts
 .DS_Store
 
 # Misc
 coverage/
+
+# Deploy temporary folder
+deploy/
+backups/
+
+# Temporary test files (creati durante debug)
+test-*.js
+reset.sql
+app-startup.log

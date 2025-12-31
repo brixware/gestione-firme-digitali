@@ -10,6 +10,7 @@
         "db:test": "node scripts/testConnection.js"
     },
     "dependencies": {
+        "bcrypt": "^6.0.0",
         "dotenv": "^10.0.0",
         "express": "^4.17.1",
         "express-mysql-session": "^3.0.3",
